@@ -140,11 +140,14 @@ bool initWiFi() {
   localIP.fromString(ip.c_str());
   localGateway.fromString(gateway.c_str());
 
+  Serial.println(ip.c_str());
 
   if (!WiFi.config(localIP, localGateway, subnet)){
     Serial.println("STA Failed to configure");
     return false;
   }
+
+  Serial.println("Setting up");
 
   if(pass == "NULL")WiFi.begin(ssid.c_str(), NULL);
   else WiFi.begin(ssid.c_str(), pass.c_str());
@@ -186,37 +189,42 @@ void setup() {
 
   initLittleFS();
 
+  //deleteFile(LittleFS, credentialsPath);
+
   // Set GPIO 2 as an OUTPUT
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
   
   rawTextLine = readFile(LittleFS, credentialsPath);
-  char* rawTextLineP;
+  char rawTextLineP[rawTextLine.length()];
   strcpy(rawTextLineP, rawTextLine.c_str());
+
+  //Serial.println(rawTextLineP);
 
 
   if(rawTextLine != ""){
     //Parse saved config
-    mode = String(strtok(rawTextLineP, ","));
+    mode = atoi(strtok(rawTextLineP, ","));
     ssid = String(strtok(NULL, ","));
     pass = String(strtok(NULL, ","));
     ip = String(strtok(NULL, ","));
     gateway = String(strtok(NULL, ","));
   }else{
-    mode = String();
+    mode = 2; //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
     ssid = String();
     pass = String();
     ip =  String();
     gateway = String(); 
   }
 
+  Serial.println(mode);
   Serial.println(ssid);
   Serial.println(pass);
   Serial.println(ip);
   Serial.println(gateway);
 
   // Mode = 0, AP MODE, Mode = 1 STATION MODE 
-  if(mode == "1" || initWiFi()) {
+  if(mode == "1" && initWiFi()) {
     //STATION Mode
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
@@ -258,7 +266,7 @@ void setup() {
     server.begin();
   }else{
     //"No config" AP mode
-    Serial.println("Setting AP (Access Point)");
+    Serial.println("Setting AP (Access Point) config mode");
     // NULL sets an open Access Point
     WiFi.softAP("ESP-WIFI-MANAGER", NULL);
 
@@ -274,6 +282,7 @@ void setup() {
     server.serveStatic("/", LittleFS, "/");
     
     server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+      Serial.println("POST request received");
       int params = request->params();
       char buffer[50] = "";
       for(int i=0;i<params;i++){
@@ -310,7 +319,9 @@ void setup() {
           }
 
         }
-        if(mode != "0" && mode != "1"){
+
+      }
+              if(mode != "0" && mode != "1"){
           //Error, mode needs to be set to either 1 or 0
           request->send(400, "text/plain", "Bad request, mode not set");
         }else if(mode == "0"){
@@ -345,8 +356,6 @@ void setup() {
         request->send(200, "text/plain", "Done. ESP will restart, connect to your router and go to IP address: " + ip);
         delay(3000);
         ESP.restart();
-      }
-
     });
     server.begin();
   }
