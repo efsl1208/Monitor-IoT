@@ -66,26 +66,6 @@ void initLittleFS() {
   Serial.println("LittleFS mounted successfully");
 }
 
-// Read File from LittleFS
-/*bool readFile(fs::FS &fs, const char * path, String credentials[]){
-  Serial.printf("Reading file: %s\r\n", path);
-
-  File file = fs.open(path);
-  if(!file || file.isDirectory()){
-    Serial.println("- failed to open file for reading");
-    return false;
-  }
-  
-  String fileContent;
-  uint8_t i = 0;
-  while(file.available()){
-    credentials[i]= file.readStringUntil(';');
-    i++;
-    if(i == 4) break;   
-  }
-  return true;
-}*/
-
 String readFile(fs::FS &fs, const char * path){
   Serial.printf("Reading file: %s\r\n", path);
 
@@ -189,8 +169,6 @@ void setup() {
 
   initLittleFS();
 
-  //deleteFile(LittleFS, credentialsPath);
-
   // Set GPIO 2 as an OUTPUT
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
@@ -198,9 +176,6 @@ void setup() {
   rawTextLine = readFile(LittleFS, credentialsPath);
   char rawTextLineP[rawTextLine.length()];
   strcpy(rawTextLineP, rawTextLine.c_str());
-
-  //Serial.println(rawTextLineP);
-
 
   if(rawTextLine != ""){
     //Parse saved config
@@ -276,7 +251,7 @@ void setup() {
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-      request->send(LittleFS, "/wifimanager.html", "text/html");
+      request->send(LittleFS, "/setup.html", "text/html");
     });
     
     server.serveStatic("/", LittleFS, "/");
