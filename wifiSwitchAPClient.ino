@@ -32,20 +32,14 @@ String admin_pass;
 String credentials[4], rawTextLine;
 
 // File paths to save input values permanently
-/*const char* ssidPath = "/ssid.txt";
-const char* passPath = "/pass.txt";
-const char* ipPath = "/ip.txt";
-const char* gatewayPath = "/gateway.txt";*/
-
-
 const char* credentialsPath = "/credentials.txt";
 
+bool should_restart = false;
+
 IPAddress localIP;
-//IPAddress localIP(192, 168, 1, 200); // hardcoded
 
 // Set your Gateway IP address
 IPAddress localGateway;
-//IPAddress localGateway(192, 168, 1, 1); //hardcoded
 IPAddress subnet(255, 255, 0, 0);
 
 // Timer variables
@@ -66,52 +60,52 @@ void initLittleFS() {
   Serial.println("LittleFS mounted successfully");
 }
 
-String readFile(fs::FS &fs, const char * path){
+String readFile(fs::FS& fs, const char* path) {
   Serial.printf("Reading file: %s\r\n", path);
 
   File file = fs.open(path);
-  if(!file || file.isDirectory()){
+  if (!file || file.isDirectory()) {
     Serial.println("- failed to open file for reading");
     return String();
   }
-  
+
   String fileContent;
-  while(file.available()){
+  while (file.available()) {
     fileContent = file.readStringUntil('\n');
-    break;     
+    break;
   }
   return fileContent;
 }
 
 
 // Write file to LittleFS
-void writeFile(fs::FS &fs, const char * path, const char * message){
+void writeFile(fs::FS& fs, const char* path, const char* message) {
   Serial.printf("Writing file: %s\r\n", path);
 
   File file = fs.open(path, FILE_WRITE);
-  if(!file){
+  if (!file) {
     Serial.println("- failed to open file for writing");
     return;
   }
-  if(file.print(message)){
+  if (file.print(message)) {
     Serial.println("- file written");
   } else {
     Serial.println("- write failed");
   }
 }
 
-void deleteFile(fs::FS &fs, const char * path){
-    Serial.printf("Deleting file: %s\r\n", path);
-    if(fs.remove(path)){
-        Serial.println("- file deleted");
-    } else {
-        Serial.println("- delete failed");
-    }
+void deleteFile(fs::FS& fs, const char* path) {
+  Serial.printf("Deleting file: %s\r\n", path);
+  if (fs.remove(path)) {
+    Serial.println("- file deleted");
+  } else {
+    Serial.println("- delete failed");
+  }
 }
 
 // Initialize WiFi in STATION MODE
 bool initWiFi() {
-  if(ssid=="" || ip==""){
+  if (ssid == "" || ip == "") {
     Serial.println("Undefined SSID or IP address or mode set to AP.");
     return false;
   }
@@ -122,14 +116,14 @@ bool initWiFi() {
 
   Serial.println(ip.c_str());
 
-  if (!WiFi.config(localIP, localGateway, subnet)){
+  if (!WiFi.config(localIP, localGateway, subnet)) {
     Serial.println("STA Failed to configure");
     return false;
   }
 
   Serial.println("Setting up");
 
-  if(pass == "NULL")WiFi.begin(ssid.c_str(), NULL);
+  if (pass == "NULL") WiFi.begin(ssid.c_str(), NULL);
   else WiFi.begin(ssid.c_str(), pass.c_str());
 
   Serial.println("Connecting to WiFi...");
@@ -137,7 +131,7 @@ bool initWiFi() {
   unsigned long currentMillis = millis();
   previousMillis = currentMillis;
 
-  while(WiFi.status() != WL_CONNECTED) {
+  while (WiFi.status() != WL_CONNECTED) {
     currentMillis = millis();
     if (currentMillis - previousMillis >= interval) {
       Serial.println("Failed to connect.");
@@ -151,11 +145,10 @@ bool initWiFi() {
 
 // Replaces placeholder with LED state value
 String processor(const String& var) {
-  if(var == "STATE") {
-    if(digitalRead(ledPin)) {
+  if (var == "STATE") {
+    if (digitalRead(ledPin)) {
       ledState = "ON";
-    }
-    else {
+    } else {
       ledState = "OFF";
     }
     return ledState;
@@ -172,24 +165,29 @@ void setup() {
   // Set GPIO 2 as an OUTPUT
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
-  
+
   rawTextLine = readFile(LittleFS, credentialsPath);
   char rawTextLineP[rawTextLine.length()];
   strcpy(rawTextLineP, rawTextLine.c_str());
 
-  if(rawTextLine != ""){
+  if (rawTextLine != "") {
     //Parse saved config
     mode = atoi(strtok(rawTextLineP, ","));
     ssid = String(strtok(NULL, ","));
     pass = String(strtok(NULL, ","));
-    ip = String(strtok(NULL, ","));
-    gateway = String(strtok(NULL, ","));
-  }else{
-    mode = 2; //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
+    if (mode == "1") {
+      ip = String(strtok(NULL, ","));
+      gateway = String(strtok(NULL, ","));
+    } else {
+      ip = String();
+      gateway = String();
+    }
+  } else {
+    mode = 2;  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
     ssid = String();
     pass = String();
-    ip =  String();
-    gateway = String(); 
+    ip = String();
+    gateway = String();
   }
 
   Serial.println(mode);
@@ -198,72 +196,71 @@ void setup() {
   Serial.println(ip);
   Serial.println(gateway);
 
-  // Mode = 0, AP MODE, Mode = 1 STATION MODE 
-  if(mode == "1" && initWiFi()) {
+  // Mode = 0, AP MODE, Mode = 1 STATION MODE
+  if (mode == "1" && initWiFi()) {
     //STATION Mode
     // Route for root / web page
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
       request->send(LittleFS, "/index.html", "text/html", false, processor);
     });
     server.serveStatic("/", LittleFS, "/");
-    
+
     // Route to set GPIO state to HIGH
-    server.on("/on", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/on", HTTP_GET, [](AsyncWebServerRequest* request) {
       digitalWrite(ledPin, HIGH);
       request->send(LittleFS, "/index.html", "text/html", false, processor);
     });
 
     // Route to set GPIO state to LOW
-    server.on("/off", HTTP_GET, [](AsyncWebServerRequest *request) {
+    server.on("/off", HTTP_GET, [](AsyncWebServerRequest* request) {
       digitalWrite(ledPin, LOW);
       request->send(LittleFS, "/index.html", "text/html", false, processor);
     });
     server.begin();
-  }
-  else if(mode == 0){
+  } else if (mode == 0) {
     // AP Mode
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
-    if(ssid != "") WiFi.softAP(ssid.c_str(), NULL);
-    else WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+    if (pass != "") WiFi.softAP(ssid.c_str(), pass.c_str());
+    else WiFi.softAP(ssid.c_str(), NULL);
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
-    Serial.println(IP); 
+    Serial.println(IP);
 
     // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
       request->send(LittleFS, "/wifimanager.html", "text/html");
     });
-    
+
     server.serveStatic("/", LittleFS, "/");
 
     server.begin();
-  }else{
+  } else {
     //"No config" AP mode
     Serial.println("Setting AP (Access Point) config mode");
     // NULL sets an open Access Point
-    WiFi.softAP("ESP-WIFI-MANAGER", NULL);
+    WiFi.softAP("Estación Meteorológica IoT", NULL);
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
-    Serial.println(IP); 
+    Serial.println(IP);
 
     // Web Server Root URL
-    server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
       request->send(LittleFS, "/setup.html", "text/html");
     });
-    
+
     server.serveStatic("/", LittleFS, "/");
-    
-    server.on("/", HTTP_POST, [](AsyncWebServerRequest *request) {
+
+    server.on("/", HTTP_POST, [](AsyncWebServerRequest* request) {
       Serial.println("POST request received");
       int params = request->params();
       char buffer[50] = "";
-      for(int i=0;i<params;i++){
+      for (int i = 0; i < params; i++) {
         const AsyncWebParameter* p = request->getParam(i);
-        if(p->isPost()){
-            if (p->name() == PARAM_INPUT_0) {
+        if (p->isPost()) {
+          if (p->name() == PARAM_INPUT_0) {
             mode = p->value().c_str();
             Serial.print("Mode set to: ");
             Serial.println(mode);
@@ -292,50 +289,51 @@ void setup() {
             Serial.print("Gateway set to: ");
             Serial.println(gateway);
           }
-
         }
-
       }
-              if(mode != "0" && mode != "1"){
-          //Error, mode needs to be set to either 1 or 0
-          request->send(400, "text/plain", "Bad request, mode not set");
-        }else if(mode == "0"){
-          //Mode = 0, AP Mode
-          if(ssid == ""){
-            ssid = "ESP-32 WeatherStation";
-          }
-
-          if(pass == ""){
-            pass = "NULL";
-          } 
-
-          sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
-          Serial.println(buffer);
-          writeFile(LittleFS, credentialsPath, buffer);
+      if (mode != "0" && mode != "1") {
+        //Error, mode needs to be set to either 1 or 0
+        return request->send(400, "text/plain", "Bad request, wrong mode");
+      } else if (mode == "0") {
+        //Mode = 0, AP Mode
+        if (ssid == "") {
+          return request->send(400, "text/plain", "Bad request, SSID not set");
         }
-        else{
-          //Mode = 1, STATION Mode
-          if(ssid == ""){
-            //Error, SSID needs to be set
-            request->send(400, "text/plain", "Bad request, SSID not set");
-          }
 
-          if(pass == ""){
-            pass = "NULL";
-          } 
-
-          sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
-          Serial.println(buffer);
-          writeFile(LittleFS, credentialsPath, buffer);
+        if (pass == "") {
+          pass = "NULL";
         }
-        request->send(200, "text/plain", "Done. ESP will restart, connect to your router and go to IP address: " + ip);
-        delay(3000);
-        ESP.restart();
+
+        sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
+        Serial.println(buffer);
+        //writeFile(LittleFS, credentialsPath, buffer);
+      } else {
+        //Mode = 1, STATION Mode
+        if (ssid == "") {
+          //Error, SSID needs to be set
+          return request->send(400, "text/plain", "Bad request, SSID not set");
+        }
+
+        if (pass == "") {
+          pass = "NULL";
+        }
+
+        sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
+        Serial.println(buffer);
+        //writeFile(LittleFS, credentialsPath, buffer);
+      }
+      request->send(200, "text/plain", "Done. Restarting with new settings.");
+      should_restart = true;
     });
     server.begin();
   }
 }
 
 void loop() {
-
+  if (should_restart) {
+    Serial.println("Rebooting...");
+    server.end();
+    delay(100);
+    ESP.restart();
+  }
 }
