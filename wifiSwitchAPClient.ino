@@ -1,10 +1,3 @@
-/*********
-  Rui Santos & Sara Santos - Random Nerd Tutorials
-  Complete instructions at https://RandomNerdTutorials.com/esp32-wi-fi-manager-asyncwebserver/
-  Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files.
-  The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
-*********/
-//#include <Arduino.h>
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <AsyncTCP.h>
@@ -51,6 +44,18 @@ const int ledPin = 2;
 // Stores LED state
 
 String ledState;
+
+void parse_csv(String* text_vars[], String* csv, char del[], int qty){
+    char buffer[30] = "";
+    strcpy(buffer, csv->c_str());
+    char* p = strtok(buffer, ",");
+    for(int i = 0; i < qty; i++){
+        if(p) *text_vars[i] = p;
+        else *text_vars[i] = "";
+        p = strtok(NULL, ",");
+    }
+}
+
 
 // Initialize LittleFS
 void initLittleFS() {
@@ -167,10 +172,23 @@ void setup() {
   digitalWrite(ledPin, LOW);
 
   rawTextLine = readFile(LittleFS, credentialsPath);
-  char rawTextLineP[rawTextLine.length()];
-  strcpy(rawTextLineP, rawTextLine.c_str());
+  
+  /*mode = 2;  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
+  ssid = String();
+  pass = String();
+  ip = String();
+  gateway = String();
+  admin_pass = String();*/
 
-  if (rawTextLine != "") {
+  String* csv_variables[6] = {&mode, &ssid, &pass, &ip, &gateway, &admin_pass};
+  parse_csv(csv_variables, &rawTextLine, ";", 6);
+
+  if(mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
+
+  //char rawTextLineP[rawTextLine.length()];
+  //strcpy(rawTextLineP, rawTextLine.c_str());
+
+  /*if (rawTextLine != "") {
     //Parse saved config
     mode = atoi(strtok(rawTextLineP, ","));
     ssid = String(strtok(NULL, ","));
@@ -183,12 +201,8 @@ void setup() {
       gateway = String();
     }
   } else {
-    mode = 2;  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
-    ssid = String();
-    pass = String();
-    ip = String();
-    gateway = String();
-  }
+
+  }*/
 
   Serial.println(mode);
   Serial.println(ssid);
@@ -217,7 +231,7 @@ void setup() {
       request->send(LittleFS, "/index.html", "text/html", false, processor);
     });
     server.begin();
-  } else if (mode == 0) {
+  } else if (mode == "0") {
     // AP Mode
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
@@ -289,38 +303,25 @@ void setup() {
             Serial.print("Gateway set to: ");
             Serial.println(gateway);
           }
+
+          if (p->name() == PARAM_INPUT_5) {
+            admin_pass = p->value().c_str();
+            Serial.print("Admin pass set to: ");
+            Serial.println(admin_pass);
+          }
         }
       }
       if (mode != "0" && mode != "1") {
         //Error, mode needs to be set to either 1 or 0
         return request->send(400, "text/plain", "Bad request, wrong mode");
-      } else if (mode == "0") {
-        //Mode = 0, AP Mode
-        if (ssid == "") {
-          return request->send(400, "text/plain", "Bad request, SSID not set");
-        }
-
-        if (pass == "") {
-          pass = "NULL";
-        }
-
-        sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
-        Serial.println(buffer);
-        //writeFile(LittleFS, credentialsPath, buffer);
+      } else if (ssid == "" || admin_pass == "") {
+        //Error, SSID and admin pass needs to be set
+        return request->send(400, "text/plain", "Bad request, SSID or admin pass not set");
       } else {
-        //Mode = 1, STATION Mode
-        if (ssid == "") {
-          //Error, SSID needs to be set
-          return request->send(400, "text/plain", "Bad request, SSID not set");
-        }
-
-        if (pass == "") {
-          pass = "NULL";
-        }
-
-        sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
+        //Request OK, save config
+        sprintf(buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str(), admin_pass.c_str());
         Serial.println(buffer);
-        //writeFile(LittleFS, credentialsPath, buffer);
+        writeFile(LittleFS, credentialsPath, buffer);
       }
       request->send(200, "text/plain", "Done. Restarting with new settings.");
       should_restart = true;
