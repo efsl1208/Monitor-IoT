@@ -7,12 +7,42 @@
 #include "SPI.h"
 #include "DHT.h"
 
-//DHT definitions & config
+// RTC & time variables
+int sampleTime = 5000;    // default sample time
+
+// Variables to save values from HTML form
+String mode;
+String ssid;
+String pass;
+String ip;
+String gateway;
+String admin_pass;
+
+// R/W Variables
+String rawTextLine;
+String* csv_variables[6] = {&mode, &ssid, &pass, &ip, &gateway, &admin_pass};
+
+// File paths to save input values permanently
+const char* credentialsPath = "/credentials.txt";
+const char* credentialsPathBackup = "/credentialsBackup.txt";
+
+// Logic variables
+bool should_restart = false;
+bool isInitSD = false;
+
+// DHT definitions & config
 #define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht (DHTPIN, DHTTYPE);
-//DHT variables
+// DHT variables
 float dhtVar[2] = {0.0};
+
+// Solar rad measurements
+#define ADCPIN 34           // ADC1_6
+// Solar irr variables
+int intADCRead = -1;
+float solarIrr = 0.0;       // Solar irradiance index W/m^2
+float solarIrrRatio = 0.0;
 
 // Extern functions
 // LittleFS
@@ -27,7 +57,11 @@ extern void readFileSD();
 extern void writeFileSD();
 extern void appendFileSD();
 extern void deleteFileSD();
-
+// Solar Irradiance
+extern float readSolarIrr();
+// DHT
+extern float readTemp();
+extern float readHumid();
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -40,24 +74,7 @@ const char* PARAM_INPUT_3 = "ip";
 const char* PARAM_INPUT_4 = "gateway";
 const char* PARAM_INPUT_5 = "admin_pass";
 
-//Variables to save values from HTML form
-String mode;
-String ssid;
-String pass;
-String ip;
-String gateway;
-String admin_pass;
-
-String rawTextLine;
-String* csv_variables[6] = {&mode, &ssid, &pass, &ip, &gateway, &admin_pass};
-
-// File paths to save input values permanently
-const char* credentialsPath = "/credentials.txt";
-const char* credentialsPathBackup = "/credentialsBackup.txt";
-
-bool should_restart = false;
-bool isInitSD = false;
-
+// IP variables
 IPAddress localIP;
 
 // Set your Gateway IP address
@@ -98,7 +115,7 @@ void parse_csv(String* text_vars[], String* csv, char* del, int qty){
     }
 }
 
-// SD write parsed csv
+// SD write a csv array
 void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty){
   char buffer[50] = "";
   Serial.print("Size of csv_variables: ");
@@ -169,13 +186,14 @@ void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
 
+  // Inits
   dht.begin();
   initLittleFS();
   initSD(&isInitSD);
 
+  // SD debug
   Serial.print("isInitSD: ");
   Serial.println(isInitSD);
-
   listDirSD(SD, "/", 0);
 
   // Set GPIO 2 as an OUTPUT
@@ -187,39 +205,14 @@ void setup() {
     Serial.println("reading from SD...");
     rawTextLine = readFileSD(SD, credentialsPath);
   } else {
-    rawTextLine = readFileFS(LittleFS, credentialsPath);
+    rawTextLine = readFileFS(LittleFS, credentialsPath);    // Read from LittleFS if SD failed
   }
   Serial.println("file read...");
-    
-  /*mode = 2;  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
-  ssid = String();
-  pass = String();
-  ip = String();
-  gateway = String();
-  admin_pass = String();*/
 
+  // File content saved in csv_variables
   parse_csv(csv_variables, &rawTextLine, ",", 6);
 
   if(mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
-
-  //char rawTextLineP[rawTextLine.length()];
-  //strcpy(rawTextLineP, rawTextLine.c_str());
-
-  /*if (rawTextLine != "") {
-    //Parse saved config
-    mode = atoi(strtok(rawTextLineP, ","));
-    ssid = String(strtok(NULL, ","));
-    pass = String(strtok(NULL, ","));
-    if (mode == "1") {
-      ip = String(strtok(NULL, ","));
-      gateway = String(strtok(NULL, ","));
-    } else {
-      ip = String();
-      gateway = String();
-    }
-  } else {
-
-  }*/
 
   Serial.println(mode);
   Serial.println(ssid);
@@ -261,7 +254,7 @@ void setup() {
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/wifimanager.html", "text/html");
+      request->send(LittleFS, "/setup.html", "text/html");
     });
 
     server.serveStatic("/", LittleFS, "/");
@@ -373,15 +366,10 @@ void loop() {
     ESP.restart();
   }
   
-  delay(5000);
+  delay(sampleTime);
 
-  dhtVar[0] = dht.readHumidity();
-  dhtVar[1] = dht.readTemperature();
+  dhtVar[0] = readHumid();
+  dhtVar[1] = readTemp();
+  solarIrr = readSolarIrr(ADCPIN, 1);
 
-  Serial.print("Humidity: ");
-  Serial.println(dhtVar[0]);
-  //Serial.println(dht.readHumidity());
-  Serial.print("Temperature: ");
-  Serial.println(dhtVar[1]);
-  //Serial.println(dht.readTemperature());
 }
