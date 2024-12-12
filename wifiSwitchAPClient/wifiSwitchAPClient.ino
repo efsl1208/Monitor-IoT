@@ -6,9 +6,13 @@
 #include "SD.h"
 #include "SPI.h"
 #include "DHT.h"
+#include "time.h"
+#include <RTClib.h>
+#include <sys/time.h>
 
 // RTC & time variables
-int sampleTime = 5000;    // default sample time
+int sampleTime = 5000;    // default sample time in ms
+RTC_DS3231 rtc;
 
 // Variables to save values from HTML form
 String mode;
@@ -25,16 +29,26 @@ String* csv_variables[6] = {&mode, &ssid, &pass, &ip, &gateway, &admin_pass};
 // File paths to save input values permanently
 const char* credentialsPath = "/credentials.txt";
 const char* credentialsPathBackup = "/credentialsBackup.txt";
+const char* logsPath = "/logs.txt";
+const char* logsPathBacup = "/logsBackup.txt";
 
 // Logic variables
 bool should_restart = false;
 bool isInitSD = false;
+bool isRTC = false;
+
+// Time variables
+const char* ntpServer = "pool.ntp.org";
+unsigned long epochTime_1 = 0;
+unsigned long epochTime_2 = 0;
+time_t now;
+struct tm tmstruct;
 
 // DHT definitions & config
 #define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht (DHTPIN, DHTTYPE);
-// DHT variables
+// DHT variables, should delete?
 float dhtVar[2] = {0.0};
 
 // Solar rad measurements
@@ -45,6 +59,10 @@ float solarIrr = 0.0;       // Solar irradiance index W/m^2
 float solarIrrRatio = 0.0;
 
 // Extern functions
+// RTC DS3231
+extern void rtcInit();
+extern void rtcAdjust();
+extern unsigned long getEpochRTC();
 // LittleFS
 extern void initLittleFS();
 extern String readFileFS();
@@ -59,9 +77,12 @@ extern void appendFileSD();
 extern void deleteFileSD();
 // Solar Irradiance
 extern float readSolarIrr();
+extern void saveSolarIrr();
 // DHT
 extern float readTemp();
 extern float readHumid();
+extern void saveTemp();
+extern void saveHumid();
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -88,7 +109,6 @@ const long interval = 10000;  // interval to wait for Wi-Fi connection (millisec
 // Set LED GPIO
 const int ledPin = 2;
 // Stores LED state
-
 String ledState;
 
 // Parse values of text_vars as CSV text
@@ -124,10 +144,31 @@ void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty)
   for(int i = 0; i < qty; i++){ 
     strcpy(buffer, text_vars[i]->c_str());
     appendFileSD(fs, path, buffer);
-    if((i + 1) < sizeof(text_vars)) appendFileSD(fs, path, ",");
+    if((i + 1) < sizeof(text_vars)){
+      appendFileSD(fs, path, ",");
+    } else {
+      appendFileSD(fs, path, "\n"); 
+    }
   }
+}        
+
+// Gets time in EPOCH
+unsigned long getTimeEpoch(){
+  if (!getLocalTime(&tmstruct)) {
+    Serial.println("Failed to obtain time");
+    return(0);  //returns 0 if failed to obtain time
+  }
+  time(&now);
+  return now;
 }
-          
+
+// Sets time from epoch
+void manualTimeSet(unsigned long epochTime){
+  struct timeval tv;
+  tv.tv_sec = epochTime;
+  tv.tv_usec = 0;
+  settimeofday(&tv, NULL);
+}
 
 // Initialize WiFi in STATION MODE
 bool initWiFi() {
@@ -190,6 +231,7 @@ void setup() {
   dht.begin();
   initLittleFS();
   initSD(&isInitSD);
+  initRTC(&isRTC);
 
   // SD debug
   Serial.print("isInitSD: ");
@@ -222,6 +264,10 @@ void setup() {
 
   // Mode = 0 AP MODE, Mode = 1 STATION MODE
   if (mode == "1" && initWiFi()) {
+    /*
+    /
+    /
+    */
     //STATION Mode
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -229,19 +275,30 @@ void setup() {
     });
     server.serveStatic("/", LittleFS, "/");
 
-    // Route to set GPIO state to HIGH
-    server.on("/on", HTTP_GET, [](AsyncWebServerRequest* request) {
-      digitalWrite(ledPin, HIGH);
-      request->send(LittleFS, "/index.html", "text/html", false, processor);
-    });
+    // // Route to set GPIO state to HIGH
+    // server.on("/on", HTTP_GET, [](AsyncWebServerRequest* request) {
+    //   digitalWrite(ledPin, HIGH);
+    //   request->send(LittleFS, "/index.html", "text/html", false, processor);
+    // });
 
-    // Route to set GPIO state to LOW
-    server.on("/off", HTTP_GET, [](AsyncWebServerRequest* request) {
-      digitalWrite(ledPin, LOW);
-      request->send(LittleFS, "/index.html", "text/html", false, processor);
-    });
+    // // Route to set GPIO state to LOW
+    // server.on("/off", HTTP_GET, [](AsyncWebServerRequest* request) {
+    //   digitalWrite(ledPin, LOW);
+    //   request->send(LittleFS, "/index.html", "text/html", false, processor);
+    // });
+
+    // Time config (UTC)
+    configTime(0, 0, ntpServer);
+    if(isRTC) rtcAdjust(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec); 
+    
     server.begin();
+
+
   } else if (mode == "0") {
+    /*
+    /
+    /
+    */
     // AP Mode
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
@@ -259,6 +316,9 @@ void setup() {
 
     server.serveStatic("/", LittleFS, "/");
 
+    // Set time from rtc
+    if(isRTC) manualTimeSet(getEpochRTC);
+
     server.begin();
 
 
@@ -271,6 +331,9 @@ void setup() {
     Serial.println("Setting AP (Access Point) config mode");
     // NULL sets an open Access Point
     WiFi.softAP("Estación Meteorológica IoT", NULL);
+
+    // Set time from rtc
+    if(isRTC) manualTimeSet(getEpochRTC);
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
@@ -341,7 +404,7 @@ void setup() {
         Serial.print("Write buffer: ");
         Serial.println(buffer);
         
-        // LittleFS write
+        // LittleFS write, disabled while testing
         //writeFileFS(LittleFS, credentialsPath, buffer);
 
         if(isInitSD){
@@ -371,5 +434,12 @@ void loop() {
   dhtVar[0] = readHumid();
   dhtVar[1] = readTemp();
   solarIrr = readSolarIrr(ADCPIN, 1);
+
+  epochTime_2 = epochTime_1;
+  epochTime_1 = getTimeEpoch();
+
+  saveTemp(SD, logsPath, epochTime_1);
+  saveHumid(SD, logsPath, epochTime_1);
+  saveSolarIrr(SD, logsPath, epochTime_1);
 
 }
