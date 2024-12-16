@@ -38,7 +38,8 @@ bool isInitSD = false;
 bool isRTC = false;
 
 // Time variables
-const char* ntpServer = "pool.ntp.org";
+const char *ntpServer = "pool.ntp.org";
+const char *ntpServer1 = "time.nist.gov";
 unsigned long epochTime_1 = 0;
 unsigned long epochTime_2 = 0;
 time_t now;
@@ -63,6 +64,7 @@ float solarIrrRatio = 0.0;
 extern void rtcInit();
 extern void rtcAdjust();
 extern unsigned long getEpochRTC();
+extern void rtcPrintTime();
 // LittleFS
 extern void initLittleFS();
 extern String readFileFS();
@@ -100,7 +102,8 @@ IPAddress localIP;
 
 // Set your Gateway IP address
 IPAddress localGateway;
-IPAddress subnet(255, 255, 0, 0);
+IPAddress subnet(255, 255, 255, 0);
+IPAddress dns(8,8,8,8);
 
 // Timer variables
 unsigned long previousMillis = 0;
@@ -183,7 +186,7 @@ bool initWiFi() {
 
   Serial.println(ip.c_str());
 
-  if (!WiFi.config(localIP, localGateway, subnet)) {
+  if (!WiFi.config(localIP, localGateway, subnet, dns)) {
     Serial.println("STA Failed to configure");
     return false;
   }
@@ -223,6 +226,40 @@ String processor(const String& var) {
   return String();
 }
 
+//testing
+void printLocalTime(){
+  struct tm timeinfo;
+  if(!getLocalTime(&timeinfo)){
+    Serial.println("Failed to obtain time");
+    return;
+  }
+  Serial.println(&timeinfo, "%A, %B %d %Y %H:%M:%S");
+  Serial.print("Day of week: ");
+  Serial.println(&timeinfo, "%A");
+  Serial.print("Month: ");
+  Serial.println(&timeinfo, "%B");
+  Serial.print("Day of Month: ");
+  Serial.println(&timeinfo, "%d");
+  Serial.print("Year: ");
+  Serial.println(&timeinfo, "%Y");
+  Serial.print("Hour: ");
+  Serial.println(&timeinfo, "%H");
+  Serial.print("Hour (12 hour format): ");
+  Serial.println(&timeinfo, "%I");
+  Serial.print("Minute: ");
+  Serial.println(&timeinfo, "%M");
+  Serial.print("Second: ");
+  Serial.println(&timeinfo, "%S");
+
+  Serial.println("Time variables");
+  char timeHour[3];
+  strftime(timeHour,3, "%H", &timeinfo);
+  Serial.println(timeHour);
+  char timeWeekDay[10];
+  strftime(timeWeekDay,10, "%A", &timeinfo);
+  Serial.println(timeWeekDay);
+  Serial.println();
+}
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
@@ -231,7 +268,7 @@ void setup() {
   dht.begin();
   initLittleFS();
   initSD(&isInitSD);
-  initRTC(&isRTC);
+  rtcInit(&isRTC);
 
   // SD debug
   Serial.print("isInitSD: ");
@@ -288,8 +325,12 @@ void setup() {
     // });
 
     // Time config (UTC)
-    configTime(0, 0, ntpServer);
-    if(isRTC) rtcAdjust(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec); 
+    configTime(0, 0, ntpServer, ntpServer1);
+    Serial.println("Time tried to be set...");
+    printLocalTime();
+    delay(5000);
+    getLocalTime(&tmstruct);
+    if(isRTC) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
     
     server.begin();
 
@@ -317,8 +358,9 @@ void setup() {
     server.serveStatic("/", LittleFS, "/");
 
     // Set time from rtc
-    if(isRTC) manualTimeSet(getEpochRTC);
-
+    if(isRTC) {
+      manualTimeSet(getEpochRTC());
+    }
     server.begin();
 
 
@@ -333,7 +375,7 @@ void setup() {
     WiFi.softAP("Estación Meteorológica IoT", NULL);
 
     // Set time from rtc
-    if(isRTC) manualTimeSet(getEpochRTC);
+    if(isRTC) manualTimeSet(getEpochRTC());
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
@@ -440,6 +482,10 @@ void loop() {
 
   saveTemp(SD, logsPath, epochTime_1);
   saveHumid(SD, logsPath, epochTime_1);
-  saveSolarIrr(SD, logsPath, epochTime_1);
+  saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
 
+  rtcPrintTime();
+
+  Serial.println("local time: ");
+  printLocalTime();
 }

@@ -1,3 +1,5 @@
+char daysOfTheWeek[7][12] = {"Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"};
+
 void rtcInit(bool *isRTC){
   if(!rtc.begin()){
     Serial.println("RTC module failure");
@@ -8,8 +10,33 @@ void rtcInit(bool *isRTC){
   *isRTC = true;
 }
 
-void rtcAdjust(int year, int month, int day, int hour, int minute, int second){
-  rtc.adjust(year, month, day, hour, minute, second);
+void rtcPrintTime(){
+  DateTime now = rtc.now();
+
+  Serial.print(now.year(), DEC);
+  Serial.print('/');
+  Serial.print(now.month(), DEC);
+  Serial.print('/');
+  Serial.print(now.day(), DEC);
+  Serial.print(" (");
+  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
+  Serial.print(") ");
+  Serial.print(now.hour(), DEC);
+  Serial.print(':');
+  Serial.print(now.minute(), DEC);
+  Serial.print(':');
+  Serial.print(now.second(), DEC);
+  Serial.println();
+
+  Serial.print(" since midnight 1/1/1970 = ");
+  Serial.print(now.unixtime());
+  Serial.print("s = ");
+  Serial.print(now.unixtime() / 86400L);
+  Serial.println("d");
+}
+
+void rtcAdjust(DateTime dateNew){
+  rtc.adjust(dateNew);
   Serial.println("RTC time adjusted to (UTC):");
   DateTime now = rtc.now();
   Serial.print(now.year(), DEC);
@@ -18,7 +45,7 @@ void rtcAdjust(int year, int month, int day, int hour, int minute, int second){
   Serial.print('/');
   Serial.print(now.day(), DEC);
   Serial.print(" (");
-  Serial.print(daysOfWeek[now.dayOfTheWeek()]);
+  Serial.print(daysOfTheWeek[now.dayOfTheWeek()]);
   Serial.print(") ");
   Serial.print(now.hour(), DEC);
   Serial.print(':');
@@ -28,5 +55,5 @@ void rtcAdjust(int year, int month, int day, int hour, int minute, int second){
 }
 
 unsigned long getEpochRTC(){
-  return rtc.now();
+  return rtc.now().unixtime();
 }

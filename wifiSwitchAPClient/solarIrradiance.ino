@@ -6,10 +6,14 @@ float readSolarIrr(int adcPin, float solarIrrRatio){
 }
 
 void saveSolarIrr(fs::FS& fs, const char* path, unsigned long epochTime, int adcPin, float solarIrrRatio){
+  char buffer[30] = "";
   appendFileSD(fs, path, "solar");
   appendFileSD(fs, path, ",");
-  appendFileSD(fs, path, readSolarIrr(adcPin, solarIrrRatio));
+  sprintf(buffer, "%f", readSolarIrr(adcPin, solarIrrRatio));
+  appendFileSD(fs, path, buffer);
   appendFileSD(fs, path, ",");
-  appendFileSD(fs, path, epochTime);
+  strcpy(buffer, "");
+  sprintf(buffer, "%lu", epochTime);
+  appendFileSD(fs, path, buffer);
   appendFileSD(fs, path, "\n");
 }
