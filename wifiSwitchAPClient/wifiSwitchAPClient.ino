@@ -59,6 +59,14 @@ int intADCRead = -1;
 float solarIrr = 0.0;       // Solar irradiance index W/m^2
 float solarIrrRatio = 0.0;
 
+// Airflow measurement
+#define AIRFLOWPIN 13
+// Airflow variables
+int timesAirflowSwitch = 0;
+int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
+float airflow = 0.0;
+float airflowRatio = 0.0;
+
 // Extern functions
 // RTC DS3231
 extern void rtcInit();
@@ -85,6 +93,9 @@ extern float readTemp();
 extern float readHumid();
 extern void saveTemp();
 extern void saveHumid();
+// Airflow
+extern float readAirflow();
+extern void saveAirflow();
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -260,6 +271,13 @@ void printLocalTime(){
   Serial.println(timeWeekDay);
   Serial.println();
 }
+
+// Interrupts
+// Airflow interrupt
+void IRAM_ATTR isrAirflow(){
+  timesAirflowSwitch++;
+}
+
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
@@ -278,6 +296,10 @@ void setup() {
   // Set GPIO 2 as an OUTPUT
   pinMode(ledPin, OUTPUT);
   digitalWrite(ledPin, LOW);
+
+  // Setting interrupts
+  pinMode(AIRFLOWPIN, INPUT);
+  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
 
   // Try to read from SD
   if(isInitSD){
@@ -477,12 +499,13 @@ void loop() {
   dhtVar[1] = readTemp();
   solarIrr = readSolarIrr(ADCPIN, 1);
 
-  epochTime_2 = epochTime_1;
-  epochTime_1 = getTimeEpoch();
+  epochTime_2 = epochTime_1;        // Past time for calculations?
+  epochTime_1 = getTimeEpoch();     // Current time
 
   saveTemp(SD, logsPath, epochTime_1);
   saveHumid(SD, logsPath, epochTime_1);
   saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
+  saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
 
   rtcPrintTime();
 
