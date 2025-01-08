@@ -10,6 +10,19 @@
 #include <RTClib.h>
 #include <sys/time.h>
 
+/*    Pins usage
+/     2: Led
+/     4: DHT
+/     5: CS
+/     13: Airflow
+/     18: CLK
+/     19: MISO
+/     21: RTC
+/     22: RTC
+/     23: MOSI
+/     34: ADC (Solar Irr)
+*/
+
 // RTC & time variables
 int sampleTime = 5000;    // default sample time in ms
 RTC_DS3231 rtc;
@@ -96,6 +109,12 @@ extern void saveHumid();
 // Airflow
 extern float readAirflow();
 extern void saveAirflow();
+// Wind direction
+extern String readWindDir();
+extern void saveWindDir();
+// Rain gauge
+extern float readPrecip();
+extern void savePrecip();
 
 // Create AsyncWebServer object on port 80
 AsyncWebServer server(80);
