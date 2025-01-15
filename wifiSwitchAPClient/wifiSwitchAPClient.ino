@@ -9,12 +9,16 @@
 #include "time.h"
 #include <RTClib.h>
 #include <sys/time.h>
+#include <OneWire.h>
+#include <DallasTemperature.h>
 
 /*    Pins usage
 /     2: Led
 /     4: DHT
 /     5: CS
 /     13: Airflow
+/     14: Precipitation
+/     17: Temp DS18B20
 /     18: CLK
 /     19: MISO
 /     21: RTC
@@ -65,6 +69,10 @@ DHT dht (DHTPIN, DHTTYPE);
 // DHT variables, should delete?
 float dhtVar[2] = {0.0};
 
+// DS18B20
+#define DSBPIN 17
+DallasTemperature tempDSB;
+
 // Solar rad measurements
 #define ADCPIN 34           // ADC1_6
 // Solar irr variables
@@ -79,6 +87,24 @@ int timesAirflowSwitch = 0;
 int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
 float airflow = 0.0;
 float airflowRatio = 0.0;
+
+// Wind Direction
+#define WINDNPIN 0
+#define WINDSPIN 0
+#define WINDEPIN 0
+#define WINDWPIN 0
+#define WINDNEPIN 0
+#define WINDNWPIN 0
+#define WINDSEPIN 0
+#define WINDSWPIN 0
+
+// Precipitation measurement
+#define PRECIPPIN 14
+// Precipitation variables
+int timesPrecipSwitch = 0;
+int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
+float pecip = 0.0;
+float precipRatio = 0.0;
 
 // Extern functions
 // RTC DS3231
@@ -106,6 +132,10 @@ extern float readTemp();
 extern float readHumid();
 extern void saveTemp();
 extern void saveHumid();
+// DS18B200
+extern DallasTemperature initDSBTemp();
+extern float readDSBTemp();
+extern void saveDSBTemp();
 // Airflow
 extern float readAirflow();
 extern void saveAirflow();
@@ -296,6 +326,10 @@ void printLocalTime(){
 void IRAM_ATTR isrAirflow(){
   timesAirflowSwitch++;
 }
+// Precipitation interrupt
+void IRAM_ATTR isrPrecip(){
+  timesPrecipSwitch++;
+}
 
 void setup() {
   // Serial port for debugging purposes
@@ -306,6 +340,8 @@ void setup() {
   initLittleFS();
   initSD(&isInitSD);
   rtcInit(&isRTC);
+  tempDSB = initDSBTemp(DSBPIN);
+  tempDSB.begin();
 
   // SD debug
   Serial.print("isInitSD: ");
@@ -319,7 +355,9 @@ void setup() {
   // Setting interrupts
   pinMode(AIRFLOWPIN, INPUT);
   attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
-
+  pinMode(PRECIPPIN, INPUT);
+  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
+  
   // Try to read from SD
   if(isInitSD){
     Serial.println("reading from SD...");
@@ -522,10 +560,13 @@ void loop() {
   epochTime_1 = getTimeEpoch();     // Current time
 
   saveTemp(SD, logsPath, epochTime_1);
+  saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
   saveHumid(SD, logsPath, epochTime_1);
   saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
   saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
-
+  saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+  savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
+  
   rtcPrintTime();
 
   Serial.println("local time: ");
