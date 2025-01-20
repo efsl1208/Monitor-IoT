@@ -88,15 +88,15 @@ int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
 float airflow = 0.0;
 float airflowRatio = 0.0;
 
-// Wind Direction
-#define WINDNPIN 0
-#define WINDSPIN 0
-#define WINDEPIN 0
-#define WINDWPIN 0
-#define WINDNEPIN 0
-#define WINDNWPIN 0
-#define WINDSEPIN 0
-#define WINDSWPIN 0
+// Wind Direction             pin 35 placeholder
+#define WINDNPIN 35
+#define WINDSPIN 35
+#define WINDEPIN 35
+#define WINDWPIN 35
+#define WINDNEPIN 35
+#define WINDNWPIN 35
+#define WINDSEPIN 35
+#define WINDSWPIN 35
 
 // Precipitation measurement
 #define PRECIPPIN 14
@@ -172,7 +172,7 @@ const long interval = 10000;  // interval to wait for Wi-Fi connection (millisec
 // Set LED GPIO
 const int ledPin = 2;
 // Stores LED state
-String ledState;
+String ledState = "OFF";
 
 // Parse values of text_vars as CSV text
 void parse_csv(String* text_vars[], String* csv, char* del, int qty){
@@ -274,17 +274,25 @@ bool initWiFi() {
 }
 
 // Replaces placeholder with LED state value
-String processor(const String& var) {
-  if (var == "STATE") {
-    if (digitalRead(ledPin)) {
-      ledState = "ON";
-    } else {
-      ledState = "OFF";
-    }
-    return ledState;
-  }
-  return String();
+// String processor(const String& var) {
+//   if (var == "STATE") {
+//     if (digitalRead(ledPin)) {
+//       ledState = "ON";
+//     } else {
+//       ledState = "OFF";
+//     }
+//     return ledState;
+//   }
+//   return String();
+// }
+
+void blink(){
+  digitalWrite(ledPin, HIGH);
+  delay(1000);
+  digitalWrite(ledPin, LOW);
+  delay(1000);
 }
+
 
 //testing
 void printLocalTime(){
@@ -335,10 +343,14 @@ void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
 
+  // Set GPIO 2 as an OUTPUT
+  pinMode(ledPin, OUTPUT);
+  digitalWrite(ledPin, LOW);
+
   // Inits
+  initSD(&isInitSD);
   dht.begin();
   initLittleFS();
-  initSD(&isInitSD);
   rtcInit(&isRTC);
   tempDSB = initDSBTemp(DSBPIN);
   tempDSB.begin();
@@ -348,25 +360,31 @@ void setup() {
   Serial.println(isInitSD);
   listDirSD(SD, "/", 0);
 
-  // Set GPIO 2 as an OUTPUT
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);
 
   // Setting interrupts
   pinMode(AIRFLOWPIN, INPUT);
-  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
   pinMode(PRECIPPIN, INPUT);
+  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
   attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
   
+  //SD Working indicator
+  if(isInitSD){
+    int c = 0;
+    while(c<2){
+      blink();
+      c++;
+    }
+  }
+
   // Try to read from SD
   if(isInitSD){
     Serial.println("reading from SD...");
     rawTextLine = readFileSD(SD, credentialsPath);
+    Serial.println("file read...");
   } else {
     rawTextLine = readFileFS(LittleFS, credentialsPath);    // Read from LittleFS if SD failed
   }
-  Serial.println("file read...");
-
+  
   // File content saved in csv_variables
   parse_csv(csv_variables, &rawTextLine, ",", 6);
 
@@ -387,7 +405,7 @@ void setup() {
     //STATION Mode
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/index.html", "text/html", false, processor);
+      request->send(LittleFS, "/setup.html", "text/html"); // processor -> ledState string replaced, testing
     });
     server.serveStatic("/", LittleFS, "/");
 
@@ -552,23 +570,43 @@ void loop() {
   
   delay(sampleTime);
 
+  // Detach interrupts for comms use
+  detachInterrupt(AIRFLOWPIN);
+  detachInterrupt(PRECIPPIN);
+
   dhtVar[0] = readHumid();
   dhtVar[1] = readTemp();
   solarIrr = readSolarIrr(ADCPIN, 1);
 
-  epochTime_2 = epochTime_1;        // Past time for calculations?
+  epochTime_2 = epochTime_1;        // Past time for computing?
   epochTime_1 = getTimeEpoch();     // Current time
 
   saveTemp(SD, logsPath, epochTime_1);
-  saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
+  //saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
   saveHumid(SD, logsPath, epochTime_1);
   saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
-  saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
-  saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-  savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
+  //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
+  //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+  //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
   
+  //Calibration
+  saveSolarIrr(SD, "/solarCalibration.txt", epochTime_1, ADCPIN, 1.0);
+
+  if(analogReadMilliVolts(ADCPIN)>3150){
+    digitalWrite(ledPin, HIGH);
+    Serial.println("ADC pin is too high!");
+    appendFileSD(SD, "/solarCalibration.txt", "Pin was too high!");
+  } else {
+    Serial.println("ADC pin low...");
+  }
+
   rtcPrintTime();
 
-  Serial.println("local time: ");
-  printLocalTime();
+  //Serial.println("local time: ");
+  //printLocalTime();
+
+  // Reattaching interrupts
+  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
+  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
+  
 }

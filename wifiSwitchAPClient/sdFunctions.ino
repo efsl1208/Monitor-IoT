@@ -1,6 +1,6 @@
 void initSD(bool *isInitSD){
   SPI.begin(18, 19, 23, 5); // CLK = PIN 18, MISO = PIN 19, MOSI = PIN 23, CS = PIN 5
-  delay(100);
+  delay(500);
   if(!SD.begin()){
     Serial.println("Card Mount Failed");
     *isInitSD = false;
