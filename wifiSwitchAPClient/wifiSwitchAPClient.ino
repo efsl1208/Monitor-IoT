@@ -71,7 +71,9 @@ float dhtVar[2] = {0.0};
 
 // DS18B20
 #define DSBPIN 17
-DallasTemperature tempDSB;
+//DallasTemperature tempDSB;
+OneWire oneWire(DSBPIN);
+DallasTemperature tempDSB(&oneWire);
 
 // Solar rad measurements
 #define ADCPIN 34           // ADC1_6
@@ -117,12 +119,14 @@ extern void initLittleFS();
 extern String readFileFS();
 extern void writeFileFS();
 extern void deleteFileFS();
+extern void listDirFS();
 // SD
 extern void initSD();
 extern void listDirSD();
 extern void readFileSD();
 extern void writeFileSD();
 extern void appendFileSD();
+extern void appendFileDebugSD();
 extern void deleteFileSD();
 // Solar Irradiance
 extern float readSolarIrr();
@@ -214,6 +218,11 @@ void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty)
     }
   }
 }        
+
+// Config Factory reset
+void resetConfig(){
+  writeFileFS(LittleFS, credentialsPath, "");
+}
 
 // Gets time in EPOCH
 unsigned long getTimeEpoch(){
@@ -352,14 +361,18 @@ void setup() {
   dht.begin();
   initLittleFS();
   rtcInit(&isRTC);
-  tempDSB = initDSBTemp(DSBPIN);
+  //tempDSB = initDSBTemp(oneWire);
   tempDSB.begin();
 
   // SD debug
   Serial.print("isInitSD: ");
   Serial.println(isInitSD);
+  Serial.println("SD directory");
   listDirSD(SD, "/", 0);
 
+  // LittleFS
+  listDirFS(LittleFS, "/", 0);
+  Serial.println("LittleFS directory");
 
   // Setting interrupts
   pinMode(AIRFLOWPIN, INPUT);
@@ -574,15 +587,15 @@ void loop() {
   detachInterrupt(AIRFLOWPIN);
   detachInterrupt(PRECIPPIN);
 
-  dhtVar[0] = readHumid();
-  dhtVar[1] = readTemp();
+  //dhtVar[0] = readHumid();
+  //dhtVar[1] = readTemp();
   solarIrr = readSolarIrr(ADCPIN, 1);
 
   epochTime_2 = epochTime_1;        // Past time for computing?
   epochTime_1 = getTimeEpoch();     // Current time
 
   saveTemp(SD, logsPath, epochTime_1);
-  //saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
+  saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
   saveHumid(SD, logsPath, epochTime_1);
   saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
   //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);

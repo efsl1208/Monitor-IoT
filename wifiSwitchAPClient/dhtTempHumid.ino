@@ -1,15 +1,15 @@
 float readTemp(){
   float t = dht.readTemperature();
-  Serial.println("Temperature: ");
-  Serial.println(t);
+  Serial.print("Temperature: ");
+  Serial.print(t);
   Serial.println("°C");
   return t;
 }
 
 float readHumid(){
   float h = dht.readHumidity();
-  Serial.println("Humidity: ");
-  Serial.println(h);
+  Serial.print("Humidity: ");
+  Serial.print(h);
   Serial.println("%");
   return h;
 }

@@ -1,8 +1,7 @@
-DallasTemperature initDSBTemp(int wirePin){
+void initDSBTemp(OneWire tempDSB){
   Serial.println("Initializing DS18B20...");
-  OneWire tempDSB(wirePin);
-  DallasTemperature sensor(&tempDSB);
-  return sensor;
+  //DallasTemperature sensor(&tempDSB);
+  //return sensor;
 }
 
 float readDSBTemp(DallasTemperature sensor){
