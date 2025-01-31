@@ -28,7 +28,8 @@
 */
 
 // RTC & time variables
-int sampleTime = 5000;    // default sample time in ms
+String sampleTimeString = "5000";    // default sample time in ms
+int sampleTime = 5000;
 RTC_DS3231 rtc;
 
 // Variables to save values from HTML form
@@ -43,11 +44,27 @@ String admin_pass;
 String rawTextLine;
 String* csv_variables[6] = {&mode, &ssid, &pass, &ip, &gateway, &admin_pass};
 
+// Variables for config
+String upperHourLimitS = "0";       // <= 0     defaults
+String lowerHourLimitS = "23";      // >= 23
+String upperMinLimitS = "5";        // <= 5
+String lowerMinLimitS = "55";       // >= 55
+
+int upperHourLimit = 0;       // <= 0     defaults
+int lowerHourLimit = 23;      // >= 23
+int upperMinLimit = 5;        // <= 5
+int lowerMinLimit = 55;       // >= 55
+
+String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
+
 // File paths to save input values permanently
 const char* credentialsPath = "/credentials.txt";
 const char* credentialsPathBackup = "/credentialsBackup.txt";
-const char* logsPath = "/logs.txt";
+const char* logsPathConst = "/logs.txt";
 const char* logsPathBacup = "/logsBackup.txt";
+const char* configPath = "/config.txt";
+char logsPath[60] = "/logs.csv";
+char datePath[30];
 
 // Logic variables
 bool should_restart = false;
@@ -61,6 +78,7 @@ unsigned long epochTime_1 = 0;
 unsigned long epochTime_2 = 0;
 time_t now;
 struct tm tmstruct;
+DateTime date;
 
 // DHT definitions & config
 #define DHTPIN 4
@@ -302,6 +320,72 @@ void blink(){
   delay(1000);
 }
 
+// Change date path, "YY/MM/DD/TYPE/logs.csv"
+void changeDatePath(){
+  DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  char buffer[30] = "";
+  strcpy(datePath, "/");
+  sprintf(buffer, "%d", dateYMD.year());
+  strcat(datePath, buffer);
+  if(!SD.exists(datePath)) createDirSD(SD, datePath);
+  sprintf(buffer, "%d", dateYMD.month());
+  strcat(datePath, "/");
+  strcat(datePath, buffer);
+  if(!SD.exists(datePath)) createDirSD(SD, datePath);
+  sprintf(buffer, "%d", dateYMD.day());
+  strcat(datePath, "/");
+  strcat(datePath, buffer);
+  if(!SD.exists(datePath)) createDirSD(SD, datePath);
+
+  Serial.print("Date path: ");
+  Serial.println(datePath);
+}
+
+// Returns path given the type of data to save
+char* getTypePath(int type){                // 0: temp DHT, 1: humid DHT, 2: temp DSB, 3: solar irr, 4: airflow, 5: windDir, 6: precip, 7: pressure
+  strcpy(logsPath, datePath);
+
+  char dataType[30] = "default";
+  switch(type){
+    case 0:
+      strcpy(dataType, "/tempDHT");
+      break;
+    
+    case 1:
+      strcpy(dataType, "/humid");
+      break;
+    
+    case 2:
+      strcpy(dataType, "/tempDSB");
+      break;
+    
+    case 3:
+      strcpy(dataType, "/solar");
+      break;
+    
+    case 4:
+      strcpy(dataType, "/airflow");
+      break;
+    
+    case 5:
+      strcpy(dataType, "/windDir");
+      break;
+    
+    case 6:
+      strcpy(dataType, "/precip");
+      break;
+      
+    case 7:
+      strcpy(dataType, "/pressure");
+      break;
+  }
+  strcat(logsPath, dataType);
+  if(!SD.exists(logsPath)) createDirSD(SD, logsPath);
+  strcat(logsPath, "/logs.csv");
+  Serial.print("saving to: ");
+  Serial.println(logsPath);
+  return logsPath;
+}
 
 //testing
 void printLocalTime(){
@@ -367,8 +451,9 @@ void setup() {
   // SD debug
   Serial.print("isInitSD: ");
   Serial.println(isInitSD);
+
   Serial.println("SD directory");
-  listDirSD(SD, "/", 0);
+  listDirSD(SD, "/", 4);
 
   // LittleFS
   listDirFS(LittleFS, "/", 0);
@@ -389,6 +474,7 @@ void setup() {
     }
   }
 
+  // Credentials reading
   // Try to read from SD
   if(isInitSD){
     Serial.println("reading from SD...");
@@ -397,9 +483,18 @@ void setup() {
   } else {
     rawTextLine = readFileFS(LittleFS, credentialsPath);    // Read from LittleFS if SD failed
   }
-  
   // File content saved in csv_variables
   parse_csv(csv_variables, &rawTextLine, ",", 6);
+
+  // Config reading
+  rawTextLine = readFileSD(SD, configPath);
+  parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+
+  sampleTime = atoi(sampleTimeString.c_str());
+  upperHourLimit = atoi(upperHourLimitS.c_str());       
+  lowerHourLimit = atoi(lowerHourLimitS.c_str());      
+  upperMinLimit =  atoi(upperMinLimitS.c_str());       
+  lowerMinLimit =  atoi(lowerMinLimitS.c_str());       
 
   if(mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
 
@@ -571,6 +666,10 @@ void setup() {
     });
     server.begin();
   }
+
+  // Creating paths
+  getLocalTime(&tmstruct);
+  changeDatePath();
 }
 
 void loop() {
@@ -592,16 +691,29 @@ void loop() {
   solarIrr = readSolarIrr(ADCPIN, 1);
 
   epochTime_2 = epochTime_1;        // Past time for computing?
+  if(isRTC) {                       // Prefer ext RTC
+    epochTime_1 = getEpochRTC();    // Current time
+  } else {
   epochTime_1 = getTimeEpoch();     // Current time
+  }
 
-  saveTemp(SD, logsPath, epochTime_1);
-  saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
-  saveHumid(SD, logsPath, epochTime_1);
-  saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
+  // saveTemp(SD, logsPath, epochTime_1);
+  // saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
+  // saveHumid(SD, logsPath, epochTime_1);
+  // saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
+  // //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
+  // //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+  // //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
+  
+  saveTemp(SD, getTypePath(0), epochTime_1);
+  saveDSBTemp(SD, getTypePath(2), epochTime_1, tempDSB);
+  saveHumid(SD, getTypePath(1), epochTime_1);
+  saveSolarIrr(SD, getTypePath(3), epochTime_1, ADCPIN, 1.0);
   //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
   //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
   //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
   
+
   //Calibration
   saveSolarIrr(SD, "/solarCalibration.txt", epochTime_1, ADCPIN, 1.0);
 
@@ -614,6 +726,8 @@ void loop() {
   }
 
   rtcPrintTime();
+  Serial.println("Local time: ");
+  printLocalTime();
 
   //Serial.println("local time: ");
   //printLocalTime();
@@ -622,4 +736,30 @@ void loop() {
   attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
   attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
   
+
+  // getLocalTime(&tmstruct);
+  //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  // //Serial.println(date);
+  // Serial.println(date.hour());
+  // Serial.println(date.minute());
+
+  if(isRTC){
+    date = rtc.now();
+  } else {
+    date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  }
+
+  if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
+    // Compute averages first!
+    getLocalTime(&tmstruct);
+    //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+    //Serial.println(date);
+    Serial.println(date.hour());
+    Serial.println(date.minute());
+
+    Serial.println("trying to change dir...");
+    changeDatePath();
+  }
+
+
 }
