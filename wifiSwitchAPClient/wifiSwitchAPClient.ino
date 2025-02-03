@@ -27,6 +27,8 @@
 /     34: ADC (Solar Irr)
 */
 
+// TO DO: save readings, compute average
+
 // RTC & time variables
 String sampleTimeString = "5000";    // default sample time in ms
 int sampleTime = 5000;
@@ -63,7 +65,8 @@ const char* credentialsPathBackup = "/credentialsBackup.txt";
 const char* logsPathConst = "/logs.txt";
 const char* logsPathBacup = "/logsBackup.txt";
 const char* configPath = "/config.txt";
-char logsPath[60] = "/logs.csv";
+char logsPath[60] = "/logs.JSONL";
+char avgPath[60] = "/avg.JSONL";
 char datePath[30];
 
 // Logic variables
@@ -98,15 +101,15 @@ DallasTemperature tempDSB(&oneWire);
 // Solar irr variables
 int intADCRead = -1;
 float solarIrr = 0.0;       // Solar irradiance index W/m^2
-float solarIrrRatio = 0.0;
+float solarIrrRatio = 1.0;
 
 // Airflow measurement
 #define AIRFLOWPIN 13
 // Airflow variables
 int timesAirflowSwitch = 0;
 int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
-float airflow = 0.0;
-float airflowRatio = 0.0;
+//float airflow = 0.0;
+float airflowRatio = 1.0;
 
 // Wind Direction             pin 35 placeholder
 #define WINDNPIN 35
@@ -123,8 +126,44 @@ float airflowRatio = 0.0;
 // Precipitation variables
 int timesPrecipSwitch = 0;
 int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
-float pecip = 0.0;
+//float pecip = 0.0;
 float precipRatio = 0.0;
+
+// Local readings
+float tempDHT = -1;
+float humidDHT = -1;
+float tempDSB_reading = -1;
+float solar = -1;
+float airflow = -1;
+float windDir = -1;
+float precip = -1;
+float pressure = -1;
+float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
+
+// Variable names
+String tempDHTName = "TemperatureDHT";
+String humidDHTName = "HumidityDHT";
+String tempDSBName = "TemperatureDSB";
+String solarName = "Solar Irradiance";
+String airflowName = "Airflow";
+String windDirName = "Wind Direction";
+String precipName = "Precipitation";
+String pressName = "Pressure";
+String timestName = "Timestamp";
+String* variables[9] = {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
+
+// Average computation
+int nReadings[8];
+float cReadings[8];
+float avgTempDHT = -1;
+float avgHumidDHT = -1;
+float avgTempDSB_reading = -1;
+float avgSolar = -1;
+float avgAirflow = -1;
+float avgWindDir = -1;
+float avgPrecip = -1;
+float avgPressure = -1;
+float* avgReadings[8] = {&avgTempDHT, &avgHumidDHT, &avgTempDSB_reading, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
 
 // Extern functions
 // RTC DS3231
@@ -141,10 +180,13 @@ extern void listDirFS();
 // SD
 extern void initSD();
 extern void listDirSD();
-extern void readFileSD();
+extern String readFileSD();
+extern String readLineSD();
 extern void writeFileSD();
 extern void appendFileSD();
 extern void appendFileDebugSD();
+extern void appendCSVFileSD();
+extern void writeJsonlSD();
 extern void deleteFileSD();
 // Solar Irradiance
 extern float readSolarIrr();
@@ -163,6 +205,7 @@ extern float readAirflow();
 extern void saveAirflow();
 // Wind direction
 extern String readWindDir();
+extern float readWindDirFloat();
 extern void saveWindDir();
 // Rain gauge
 extern float readPrecip();
@@ -218,24 +261,7 @@ void parse_csv(String* text_vars[], String* csv, char* del, int qty){
         } 
         p = strtok(NULL, del);      //NULL pointer, strtok pointer to last string
     }
-}
-
-// SD write a csv array
-void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty){
-  char buffer[50] = "";
-  Serial.print("Size of csv_variables: ");
-  Serial.println(sizeof(text_vars) / sizeof(text_vars[0]));
-
-  for(int i = 0; i < qty; i++){ 
-    strcpy(buffer, text_vars[i]->c_str());
-    appendFileSD(fs, path, buffer);
-    if((i + 1) < sizeof(text_vars)){
-      appendFileSD(fs, path, ",");
-    } else {
-      appendFileSD(fs, path, "\n"); 
-    }
-  }
-}        
+}    
 
 // Config Factory reset
 void resetConfig(){
@@ -258,6 +284,17 @@ void manualTimeSet(unsigned long epochTime){
   tv.tv_sec = epochTime;
   tv.tv_usec = 0;
   settimeofday(&tv, NULL);
+}
+
+// Updates time for date management
+void updateTime(){
+  // Updating Time Structure
+  if(isRTC){
+    date = rtc.now();
+  } else {
+    getLocalTime(&tmstruct);
+    date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  }
 }
 
 // Initialize WiFi in STATION MODE
@@ -320,22 +357,22 @@ void blink(){
   delay(1000);
 }
 
-// Change date path, "YY/MM/DD/TYPE/logs.csv"
+// Change date path, "YY/MM/..."
 void changeDatePath(){
-  DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  //DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
   char buffer[30] = "";
   strcpy(datePath, "/");
-  sprintf(buffer, "%d", dateYMD.year());
+  sprintf(buffer, "%d", date.year());
   strcat(datePath, buffer);
   if(!SD.exists(datePath)) createDirSD(SD, datePath);
-  sprintf(buffer, "%d", dateYMD.month());
+  sprintf(buffer, "%d", date.month());
   strcat(datePath, "/");
   strcat(datePath, buffer);
   if(!SD.exists(datePath)) createDirSD(SD, datePath);
-  sprintf(buffer, "%d", dateYMD.day());
-  strcat(datePath, "/");
-  strcat(datePath, buffer);
-  if(!SD.exists(datePath)) createDirSD(SD, datePath);
+  // sprintf(buffer, "%d", dateYMD.day());                  
+  // strcat(datePath, "/");
+  // strcat(datePath, buffer);
+  // if(!SD.exists(datePath)) createDirSD(SD, datePath);
 
   Serial.print("Date path: ");
   Serial.println(datePath);
@@ -385,6 +422,164 @@ char* getTypePath(int type){                // 0: temp DHT, 1: humid DHT, 2: tem
   Serial.print("saving to: ");
   Serial.println(logsPath);
   return logsPath;
+}
+
+// Changes logs path, .../YYYY-MM-DD.JSONL
+void changeLogsPath(){
+  //DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+  char buffer[4] = "";    //"YYYY-MM-DD"
+  strcpy(logsPath, datePath);
+  strcat(logsPath, "/");
+  sprintf(buffer, "%d", date.year());
+  strcat(logsPath, buffer);
+  strcat(logsPath, "-");
+  sprintf(buffer, "%d", date.month());
+  strcat(logsPath, buffer);
+  strcat(logsPath, "-");
+  sprintf(buffer, "%d", date.day());
+  strcat(logsPath, buffer);
+  strcat(logsPath, ".JSONL");       
+
+  //strcat(logsPath, "/logs.csv");
+  // if(!SD.exists(logsPath)) {
+  //   appendCSVFileSD(SD, logsPath, variables, 9);
+  // }
+
+  Serial.print("saving to: ");
+  Serial.println(logsPath);
+
+  //return logsPath;
+}
+
+// Changes averages log path, .../YYYY-MM-DD_avg.JSONL
+void changeAvgPath(){
+
+  char buffer[4] = "";    //"YYYY-MM-DD"
+  strcpy(avgPath, datePath);
+  strcat(avgPath, "/");
+  sprintf(buffer, "%d", date.year());
+  strcat(avgPath, buffer);
+  strcat(avgPath, "-");
+  sprintf(buffer, "%d", date.month());
+  strcat(avgPath, buffer);
+  strcat(avgPath, "-");
+  sprintf(buffer, "%d", date.day());
+  strcat(avgPath, buffer);
+  strcat(avgPath, "_avg.JSONL");       
+
+  Serial.print("saving averages to: ");
+  Serial.println(avgPath);
+
+}
+
+// Splits and returns String array, ignores {}
+void splitString(String text, String array[], char del){
+  byte y = 0;
+  for(byte i = 0; i < text.length(); i++){
+    if(text.charAt(i) == del){
+      y++;
+    } else if(!(text.charAt(i) == '{' || text.charAt(i) == '}' || text.charAt(i) == '"')){
+      array[y] += text.charAt(i);
+    }
+  }
+}
+
+// Computes average from SD data
+void dailyAverage(){
+  File file = SD.open(logsPath);
+  if(!file){
+    Serial.println("Failed to open file for reading and computing avg...");
+    return;
+  }
+  String line = "init";
+  
+
+  for(int i = 0; i < 8; i++){
+    cReadings[i] = 0;
+    nReadings[i] = 0;
+  }  
+  
+  while(!(line == "")){
+    String group[3];
+    String individual[3][2];
+    line = "";
+    line = readLineSD(file);
+    splitString(line, group, ',');
+    for(int i = 0; i < 3; i++){
+      splitString(group[i],individual[i],':');
+    }
+
+    Serial.print("Line read: ");
+    Serial.println(line);
+
+    Serial.print("Value at group 2: ");
+    Serial.println(group[1]);
+    
+    Serial.print("Value at individual 3, 2: ");
+    Serial.println(individual[2][1]);
+
+    for(int i = 0; i < 8; i++){
+      if(individual[1][1] == *variables[i + 1]){
+        nReadings[i]++;
+        cReadings[i] += atof(individual[2][1].c_str());
+      }
+    }
+
+
+    // switch(individual[1][1]){
+    //   case *variables[1]:
+    //     nReadings[0]++;
+    //     cReadings[0] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[2]:
+    //     nReadings[1]++;
+    //     cReadings[1] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[3]:
+    //     nReadings[2]++;
+    //     cReadings[2] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[4]:
+    //     nReadings[3]++;
+    //     cReadings[3] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[5]:
+    //     nReadings[4]++;
+    //     cReadings[4] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[6]:
+    //     nReadings[5]++;
+    //     cReadings[5] += atof(individual[2][1].c_str());
+    //     break;
+      
+    //   case *variables[7]:
+    //     nReadings[6]++;
+    //     cReadings[6] += atof(individual[2][1].c_str());
+    //     break;
+        
+    //   case *variables[8]:
+    //     nReadings[7]++;
+    //     cReadings[7] += atof(individual[2][1].c_str());
+    //     break;
+      
+    // }
+  }
+
+  for(int i = 0; i < 8; i++){
+    if(nReadings[i] > 0) {
+      *avgReadings[i] = cReadings[i]/nReadings[i];
+    } else {
+      *avgReadings[i] = -1;
+    }
+  }  
+
+  Serial.print("Averages computed..."); 
+  file.close();
 }
 
 //testing
@@ -487,8 +682,10 @@ void setup() {
   parse_csv(csv_variables, &rawTextLine, ",", 6);
 
   // Config reading
-  rawTextLine = readFileSD(SD, configPath);
-  parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+  if(isInitSD){
+    rawTextLine = readFileSD(SD, configPath);
+    parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+  }
 
   sampleTime = atoi(sampleTimeString.c_str());
   upperHourLimit = atoi(upperHourLimitS.c_str());       
@@ -668,8 +865,10 @@ void setup() {
   }
 
   // Creating paths
-  getLocalTime(&tmstruct);
+  updateTime();
   changeDatePath();
+  changeLogsPath();
+  changeAvgPath();
 }
 
 void loop() {
@@ -679,12 +878,14 @@ void loop() {
     delay(100);
     ESP.restart();
   }
-  
+ 
   delay(sampleTime);
-
   // Detach interrupts for comms use
   detachInterrupt(AIRFLOWPIN);
   detachInterrupt(PRECIPPIN);
+
+  updateTime();
+  
 
   //dhtVar[0] = readHumid();
   //dhtVar[1] = readTemp();
@@ -694,7 +895,7 @@ void loop() {
   if(isRTC) {                       // Prefer ext RTC
     epochTime_1 = getEpochRTC();    // Current time
   } else {
-  epochTime_1 = getTimeEpoch();     // Current time
+    epochTime_1 = getTimeEpoch();     // Current time
   }
 
   // saveTemp(SD, logsPath, epochTime_1);
@@ -705,14 +906,27 @@ void loop() {
   // //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
   // //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
   
-  saveTemp(SD, getTypePath(0), epochTime_1);
-  saveDSBTemp(SD, getTypePath(2), epochTime_1, tempDSB);
-  saveHumid(SD, getTypePath(1), epochTime_1);
-  saveSolarIrr(SD, getTypePath(3), epochTime_1, ADCPIN, 1.0);
+  // saveTemp(SD, getTypePath(0), epochTime_1);
+  // saveDSBTemp(SD, getTypePath(2), epochTime_1, tempDSB);
+  // saveHumid(SD, getTypePath(1), epochTime_1);
+  // saveSolarIrr(SD, getTypePath(3), epochTime_1, ADCPIN, 1.0);
   //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
   //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
   //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
-  
+
+  Serial.print("Current sample time: ");
+  Serial.println(sampleTime);
+
+  // Reading & saving in SD
+  tempDHT = readTemp();
+  humidDHT = readHumid();
+  tempDSB_reading = readDSBTemp(tempDSB);
+  solar = readSolarIrr(ADCPIN, solarIrrRatio);
+  airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
+  windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+  precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
+
+  writeJsonlSD(SD, logsPath, readings, variables, 8, epochTime_1);
 
   //Calibration
   saveSolarIrr(SD, "/solarCalibration.txt", epochTime_1, ADCPIN, 1.0);
@@ -725,6 +939,7 @@ void loop() {
     Serial.println("ADC pin low...");
   }
 
+  Serial.println("RTC time: ");
   rtcPrintTime();
   Serial.println("Local time: ");
   printLocalTime();
@@ -732,26 +947,19 @@ void loop() {
   //Serial.println("local time: ");
   //printLocalTime();
 
-  // Reattaching interrupts
-  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
-  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
-  
-
   // getLocalTime(&tmstruct);
   //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
   // //Serial.println(date);
   // Serial.println(date.hour());
   // Serial.println(date.minute());
 
-  if(isRTC){
-    date = rtc.now();
-  } else {
-    date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
-  }
+  //////////
+  dailyAverage();
+  writeJsonlSD(SD, avgPath, avgReadings, variables, 8, 0);
 
   if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
     // Compute averages first!
-    getLocalTime(&tmstruct);
+    dailyAverage();
     //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
     //Serial.println(date);
     Serial.println(date.hour());
@@ -759,7 +967,12 @@ void loop() {
 
     Serial.println("trying to change dir...");
     changeDatePath();
+    changeLogsPath();
+    changeAvgPath();
   }
 
-
+  // Reattaching interrupts
+  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
+  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
+  
 }

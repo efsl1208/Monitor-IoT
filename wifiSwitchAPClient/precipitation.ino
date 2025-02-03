@@ -1,7 +1,9 @@
 float readPrecip(int* timesSwitchActivated, int sampleTime, float precipRatio){
-  float currentRead = 0.0;
+  float currentRead = -1;
   currentRead = (*timesSwitchActivated / (sampleTime / 1000)) * precipRatio;   // Sample time in ms
   *timesSwitchActivated = 0;
+  Serial.print("Precipitation read: ");
+  Serial.println(currentRead);
   return currentRead;
 }
 

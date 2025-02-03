@@ -84,6 +84,14 @@ String readFileSD(fs::FS &fs, const char *path) {
   return fileContent;
 }
 
+// Assumes file is open
+String readLineSD(File file){
+  while(file.available()){
+    return file.readStringUntil('\n');
+  }
+  return "";
+}
+
 void writeFileSD(fs::FS &fs, const char *path, const char *message) {
   Serial.printf("Writing file: %s\n", path);
 
@@ -108,11 +116,11 @@ void appendFileSD(fs::FS &fs, const char *path, const char *message) {
     //Serial.println("Failed to open file for appending");
     return;
   }
-  if (file.print(message)) {
-    //Serial.println("Message appended");
-  } else {
-    //Serial.println("Append failed");
-  }
+  // if (file.print(message)) {
+  //   //Serial.println("Message appended");
+  // } else {
+  //   //Serial.println("Append failed");
+  // }
   file.close();
 }
 
@@ -130,6 +138,57 @@ void appendFileDebugSD(fs::FS &fs, const char *path, const char *message) {
     Serial.println("Append failed");
   }
   file.close();
+}
+
+// SD write a csv array
+void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty){
+  char buffer[50] = "";
+  Serial.print("Size of csv_variables: ");
+  Serial.println(sizeof(text_vars) / sizeof(text_vars[0]));
+
+  for(int i = 0; i < qty; i++){ 
+    strcpy(buffer, text_vars[i]->c_str());
+    appendFileSD(fs, path, buffer);
+    if((i + 1) < sizeof(text_vars)){
+      appendFileSD(fs, path, ",");
+    } else {
+      appendFileSD(fs, path, "\n"); 
+    }
+  }
+}
+
+// SD save readings in JSONL format
+void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identifier[], int arrayLength, int timeStamp){
+  Serial.println("Trying to write JSONL...");
+  char buffer[100] = "";
+  char nBuffer[20] = "";
+  File file = fs.open(path, FILE_APPEND);
+  if(!file){
+    Serial.println("Couldn't open file!");
+    return;
+  } 
+
+  for(int i = 0; i < arrayLength; i++){
+    //strcpy(nBuffer, "");
+    strcpy(buffer, "{\"t\":");
+    sprintf(nBuffer, "%lu",timeStamp);
+    strcat(buffer, nBuffer);
+    strcat(buffer, ", \"sensor\":\"");
+    strcpy(nBuffer, identifier[i+1]->c_str());
+    strcat(buffer, nBuffer);
+    strcat(buffer, "\", \"value\":");
+    //strcpy(nBuffer, "");
+    sprintf(nBuffer, "%.2f", *values[i]);
+    strcat(buffer, nBuffer);
+    strcat(buffer, "}\n");
+
+    file.print(buffer);
+    Serial.print("Text to save: ");
+    Serial.println(buffer);
+  }
+  file.close();
+  Serial.print("File written at: ");
+  Serial.println(path);
 }
 
 void renameFileSD(fs::FS &fs, const char *path1, const char *path2) {

@@ -1,7 +1,9 @@
 float readAirflow(int* timesSwitchActivated, int sampleTime, float airflowRatio){
-  float currentRead = 0.0;
+  float currentRead = -1;
   currentRead = (*timesSwitchActivated / (sampleTime / 1000)) * airflowRatio;   // Sample time in ms
   *timesSwitchActivated = 0;
+  Serial.print("Airflow read: ");
+  Serial.println(currentRead);
   return currentRead;
 }
 
