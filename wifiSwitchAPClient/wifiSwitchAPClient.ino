@@ -11,6 +11,7 @@
 #include <sys/time.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <HTTPClient.h>
 
 /*    Pins usage
 /     2: Led
@@ -33,6 +34,8 @@ int sampleTime = 5000;
 RTC_DS3231 rtc;
 int baseTime = 1000;                  // base sample time for real time measurements 
 int realTimeC = 0;
+#define RTCINTERRUPTPIN 15            // for consistent readings
+volatile bool alarmRTC = false;       // flag for alarm
 
 // Variables to save values from HTML form
 String mode;
@@ -60,11 +63,11 @@ int lowerMinLimit = 55;       // >= 55
 String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
 
 // File paths to save input values permanently
-const char* credentialsPath = "/credentials.txt";
+const char* credentialsPath = "/config/credentials.conf";
 const char* credentialsPathBackup = "/credentialsBackup.txt";
 const char* logsPathConst = "/logs.txt";
 const char* logsPathBacup = "/logsBackup.txt";
-const char* configPath = "/config.txt";
+const char* configPath = "/config.conf";
 char logsPath[60] = "/logs.JSONL";
 char avgPath[60] = "/avg.JSONL";
 char maxPath[60] = "/max.JSONL";
@@ -108,8 +111,8 @@ float solarIrrRatio = 1.0;
 // Airflow measurement
 #define AIRFLOWPIN 13
 // Airflow variables
-int timesAirflowSwitch = 0;
-int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
+volatile int timesAirflowSwitch = 0;
+volatile int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
 int airFlowSwitchTime = 0;
 int prevAirFlowSwitchTime = 0;
 //float airflow = 0.0;
@@ -128,8 +131,8 @@ float airflowRatio = 1.0;
 // Precipitation measurement
 #define PRECIPPIN 14
 // Precipitation variables
-int timesPrecipSwitch = 0;
-int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
+volatile int timesPrecipSwitch = 0;
+volatile int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
 int precipSwitchTime = 0;
 int prevPrecipSwitchTime = 0;
 //float pecip = 0.0;
@@ -137,63 +140,73 @@ float precipRatio = 0.0;
 
 // Local readings
 float tempDHT = -1;
-float humidDHT = -1;
-float tempDSB_reading = -1;
+float humid = -1;
+float temp = -1;
 float solar = -1;
 float airflow = -1;
 float windDir = -1;
 float precip = -1;
 float pressure = -1;
-float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
+//float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
+float* readings[7] = {&humid, &temp, &solar, &airflow, &windDir, &precip, &pressure};
 
 // Max readings
 float maxTempDHT = -1;
-float maxHumidDHT = -1;
-float maxTempDSB_reading = -1;
+float maxHumid = -1;
+float maxTemp = -1;
 float maxSolar = -1;
 float maxAirflow = -1;
 //float maxWindDir = -1;
 float maxPrecip = -1;
 float maxPressure = -1;
-float* maxReadings[7] = {&maxTempDHT, &maxHumidDHT, &maxTempDSB_reading, &maxSolar, &maxAirflow, &maxPrecip, &maxPressure};
+//float* maxReadings[7] = {&maxTempDHT, &maxHumidDHT, &maxTempDSB_reading, &maxSolar, &maxAirflow, &maxPrecip, &maxPressure};
+float* maxReadings[6] = {&maxHumid, &maxTemp, &maxSolar, &maxAirflow, &maxPrecip, &maxPressure};
+
 // Min readings
 float minTempDHT = 9999;
-float minHumidDHT = 9999;
-float minTempDSB_reading = 9999;
+float minHumid = 9999;
+float minTemp = 9999;
 float minSolar = 9999;
 float minAirflow = 9999;
 //float minWindDir = 9999;
 float minPrecip = 9999;
 float minPressure = 9999;
-float* minReadings[7] = {&minTempDHT, &minHumidDHT, &minTempDSB_reading, &minSolar, &minAirflow, &minPrecip, &minPressure};
+//float* minReadings[7] = {&minTempDHT, &minHumidDHT, &minTempDSB_reading, &minSolar, &minAirflow, &minPrecip, &minPressure};
+float* minReadings[6] = {&minHumid, &minTemp, &minSolar, &minAirflow, &minPrecip, &minPressure};
 
 // Alarm limits
 
 
 // Variable names
 String tempDHTName = "TemperatureDHT";
-String humidDHTName = "HumidityDHT";
-String tempDSBName = "TemperatureDSB";
-String solarName = "Solar Irradiance";
-String airflowName = "Airflow";
-String windDirName = "Wind Direction";
-String precipName = "Precipitation";
-String pressName = "Pressure";
-String timestName = "Timestamp";
-String* variables[9] = {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
-String* variablesMaxMin[8] =  {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &precipName, &pressName};
+String humidName = "humedad";
+String tempName = "temperatura";
+String solarName = "solar";
+String airflowName = "velocidad";
+String windDirName = "direccion";
+String precipName = "pluviosidad";
+String pressName = "presion";
+String timestName = "t";
+//String* variables[9] = {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
+//String* variablesMaxMin[8] =  {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &precipName, &pressName};
+String* variableName[8] = {&timestName, &humidName, &tempName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
+String* variablesMaxMin[7] =  {&timestName, &humidName, &tempName, &solarName, &airflowName, &precipName, &pressName};
+
 // Average computation
-int nReadings[8];
-float cReadings[8];
+//int nReadings[8];
+//float cReadings[8];
+int nReadings[7];
+float cReadings[7];
 float avgTempDHT = -1;
-float avgHumidDHT = -1;
-float avgTempDSB_reading = -1;
+float avgHumid = -1;
+float avgTemp = -1;
 float avgSolar = -1;
 float avgAirflow = -1;
-float avgWindDir = -1;
+float avgWindDir = -1;        // check?
 float avgPrecip = -1;
 float avgPressure = -1;
-float* avgReadings[8] = {&avgTempDHT, &avgHumidDHT, &avgTempDSB_reading, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
+//float* avgReadings[8] = {&avgTempDHT, &avgHumidDHT, &avgTempDSB_reading, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
+float* avgReadings[7] = {&avgHumid, &avgTemp, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
 
 // Extern functions
 // RTC DS3231
@@ -241,8 +254,10 @@ extern void saveWindDir();
 extern float readPrecip();
 extern void savePrecip();
 
-// Create AsyncWebServer object on port 80
+// AsyncWebServer object on port 80
 AsyncWebServer server(80);
+// Web socket
+AsyncWebSocket ws("/ws");
 
 // Search for parameter in HTTP POST request
 const char* PARAM_INPUT_0 = "mode";
@@ -271,7 +286,7 @@ String ledState = "OFF";
 
 // Parse values of text_vars as CSV text
 void parse_csv(String* text_vars[], String* csv, char* del, int qty){
-    char buffer[50] = "";
+    char buffer[100] = "";
 
     strcpy(buffer, csv->c_str());   //copy text into buffer
     Serial.print("String copied to buffer: ");
@@ -367,6 +382,85 @@ bool initWiFi() {
   return true;
 }
 
+// Init websocket
+void initWS(){
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
+}
+
+// Sending readings
+void sendReadings(String data){
+  ws.textAll(data);
+}
+
+// Sending alarms?
+
+// Current readings to String
+String currentReadingsString(float* values[], String* identifier[], int arrayLength, int epochTime){
+  Serial.print("Preparing data for ws...");
+  char buffer[600] = "";    // Might be overkill
+  char nBuffer[20] = "";    // Name buffer
+  String reads = "";
+  //strcpy(buffer, "{tipo: \"sensorData\", data:{t:");       // Timestamp name hardcoded to "t", maybe change
+  strcpy(buffer, "{ \"type\": \"sensorData\", \"data\": { ");       // Timestamp name hardcoded to "t", maybe change
+  //sprintf(nBuffer, "%lu", epochTime);
+  //strcat(buffer, nBuffer);
+  //strcat(buffer, ", {");
+
+  for(int i = 0; i < arrayLength; i++){
+    strcat(buffer, "\"");
+    strcpy(nBuffer, identifier[i+1]->c_str());
+    strcat(buffer, nBuffer);
+    strcat(buffer, "\": { \"t\": ");
+    sprintf(nBuffer, "%lu", epochTime);
+    strcat(buffer, nBuffer);
+    strcat(buffer, ", \"sensor\": \"");
+    strcpy(nBuffer, identifier[i+1]->c_str());
+    strcat(buffer, nBuffer);
+    strcat(buffer, "\", \"valor\": ");
+    sprintf(nBuffer, "%.2f", *values[i]);
+    strcat(buffer, nBuffer);
+    strcat(buffer, "}");
+    if(i+1<arrayLength) strcat(buffer, ", ");
+  }
+  strcat(buffer, "}}");
+  reads = buffer;
+  Serial.println(reads);
+  return reads;
+}
+
+
+// WS event handler
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT:
+      Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      handleWSMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
+// WS message handler
+void handleWSMessage(void *arg, uint8_t *data, size_t len) {
+  AwsFrameInfo *info = (AwsFrameInfo*)arg;
+  if (info->final && info->index == 0 && info->len == len && info->opcode == WS_TEXT) {
+    data[len] = 0;
+    String message = (char*)data;
+    // Check message
+    if (strcmp((char*)data, "test message") == 0) {
+      Serial.println("test message from ws recieved...");
+    }
+  }
+}
+
 // Replaces placeholder with LED state value
 // String processor(const String& var) {
 //   if (var == "STATE") {
@@ -408,7 +502,7 @@ void changeDatePath(){
   Serial.println(datePath);
 }
 
-// Returns path given the type of data to save
+// Returns path given the type of data to save, depracated
 char* getTypePath(int type){                // 0: temp DHT, 1: humid DHT, 2: temp DSB, 3: solar irr, 4: airflow, 5: windDir, 6: precip, 7: pressure
   strcpy(logsPath, datePath);
 
@@ -502,7 +596,7 @@ void changeAvgPath(){
 
 }
 
-// Changes max readings log path, .../YYYY-MM-DD_avg.JSONL
+// Changes max readings log path, .../YYYY-MM-DD_max.JSONL
 void changeMaxPath(){
 
   char buffer[4] = "";    //"YYYY-MM-DD"
@@ -518,12 +612,12 @@ void changeMaxPath(){
   strcat(maxPath, buffer);
   strcat(maxPath, "_max.JSONL");       
 
-  Serial.print("saving averages to: ");
+  Serial.print("saving max values to: ");
   Serial.println(maxPath);
 
 }
 
-// Changes min readings log path, .../YYYY-MM-DD_avg.JSONL
+// Changes min readings log path, .../YYYY-MM-DD_min.JSONL
 void changeMinPath(){
 
   char buffer[4] = "";    //"YYYY-MM-DD"
@@ -539,7 +633,7 @@ void changeMinPath(){
   strcat(minPath, buffer);
   strcat(minPath, "_min.JSONL");       
 
-  Serial.print("saving averages to: ");
+  Serial.print("saving min values to: ");
   Serial.println(minPath);
 
 }
@@ -566,7 +660,7 @@ void dailyAverage(){
   String line = "init";
   
 
-  for(int i = 0; i < 8; i++){
+  for(int i = 0; i < 7; i++){
     cReadings[i] = 0;
     nReadings[i] = 0;
   }  
@@ -590,8 +684,8 @@ void dailyAverage(){
     Serial.print("Value at individual 3, 2: ");
     Serial.println(individual[2][1]);
 
-    for(int i = 0; i < 8; i++){
-      if(individual[1][1] == *variables[i + 1]){
+    for(int i = 0; i < 7; i++){
+      if(individual[1][1] == *variableName[i + 1]){
         nReadings[i]++;
         cReadings[i] += atof(individual[2][1].c_str());
       }
@@ -642,7 +736,7 @@ void dailyAverage(){
     // }
   }
 
-  for(int i = 0; i < 8; i++){
+  for(int i = 0; i < 7; i++){
     if(nReadings[i] > 0) {
       *avgReadings[i] = cReadings[i]/nReadings[i];
     } else {
@@ -691,7 +785,7 @@ void printLocalTime(){
 
 // Interrupts
 // Airflow interrupt
-void IRAM_ATTR isrAirflow(){
+void IRAM_ATTR airflowISR(){
   airFlowSwitchTime = millis();
   if(airFlowSwitchTime - prevAirFlowSwitchTime > 100){
     timesAirflowSwitch++;
@@ -700,7 +794,7 @@ void IRAM_ATTR isrAirflow(){
 
 }
 // Precipitation interrupt
-void IRAM_ATTR isrPrecip(){
+void IRAM_ATTR precipISR(){
   precipSwitchTime = millis();
   if(precipSwitchTime - prevPrecipSwitchTime > 100){
     timesPrecipSwitch++;
@@ -708,6 +802,13 @@ void IRAM_ATTR isrPrecip(){
   }
   
 }
+
+// RTC alarm
+void IRAM_ATTR rtcISR(){
+  alarmRTC = true;
+}
+
+
 
 void setup() {
   // Serial port for debugging purposes
@@ -724,6 +825,14 @@ void setup() {
   rtcInit(&isRTC);
   //tempDSB = initDSBTemp(oneWire);
   tempDSB.begin();
+  
+
+  // RTC Config
+  rtc.disable32K();
+  rtc.clearAlarm(1);
+  rtc.clearAlarm(2);
+  rtc.writeSqwPinMode(DS3231_OFF);
+  rtc.disableAlarm(2);
 
   // SD debug
   Serial.print("isInitSD: ");
@@ -739,9 +848,11 @@ void setup() {
   // Setting interrupts
   pinMode(AIRFLOWPIN, INPUT);
   pinMode(PRECIPPIN, INPUT);
-  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
-  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
-  
+  pinMode(RTCINTERRUPTPIN, INPUT_PULLUP);
+  attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
+  attachInterrupt(PRECIPPIN, precipISR, FALLING);
+  attachInterrupt(RTCINTERRUPTPIN, rtcISR, FALLING);
+
   //SD Working indicator
   if(isInitSD){
     int c = 0;
@@ -790,9 +901,10 @@ void setup() {
     /
     */
     //STATION Mode
+    initWS();
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/setup.html", "text/html"); // processor -> ledState string replaced, testing
+      request->send(LittleFS, "/mainUI/index.html", "text/html"); // main UI loading
     });
     server.serveStatic("/", LittleFS, "/");
 
@@ -836,7 +948,7 @@ void setup() {
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/setup.html", "text/html");
+      request->send(LittleFS, "/setup/setup.html", "text/html");
     });
 
     server.serveStatic("/", LittleFS, "/");
@@ -867,7 +979,7 @@ void setup() {
 
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/setup.html", "text/html");
+      request->send(LittleFS, "/setup/setup.html", "text/html");
     });
 
     server.serveStatic("/", LittleFS, "/");
@@ -936,7 +1048,7 @@ void setup() {
         if(isInitSD){
           // SD write
           writeFileSD(SD, credentialsPath, buffer);
-          appendCSVFileSD(SD, credentialsPathBackup, csv_variables, 6);
+          //appendCSVFileSD(SD, credentialsPathBackup, csv_variables, 6);
         }
         
       }
@@ -953,6 +1065,15 @@ void setup() {
   changeAvgPath();
   changeMaxPath();
   changeMinPath();
+
+  // Info
+  Serial.print("Current sample time: ");
+  Serial.println(sampleTime);
+  
+  rtc.setAlarm1(DateTime(0,0,0,0,0,1), DS3231_A1_PerSecond);
+  alarmRTC = false;
+  rtc.clearAlarm(1);
+  Serial.println(alarmRTC);
 }
 
 void loop() {
@@ -962,137 +1083,151 @@ void loop() {
     delay(100);
     ESP.restart();
   }
- 
-  delay(baseTime);
-  // Detach interrupts for comms use
-  detachInterrupt(AIRFLOWPIN);
-  detachInterrupt(PRECIPPIN);
+  // if(alarmRTC){ 
+  //   Serial.println("flag true....");
+  // } else {
+  //   Serial.println("flag false!");
+  // }
+  while((isRTC && alarmRTC) || !isRTC){
+    if(!isRTC) delay(baseTime);   // Backup timer
+    // Detach interrupts for comms use
+    detachInterrupt(AIRFLOWPIN);
+    detachInterrupt(PRECIPPIN);
 
-  updateTime();
-  
-  solarIrr = readSolarIrr(ADCPIN, 1);
+    updateTime();
+    
+    //solarIrr = readSolarIrr(ADCPIN, 1);
 
-  epochTime_2 = epochTime_1;        // Past time for computing?
-  if(isRTC) {                       // Prefer ext RTC
-    epochTime_1 = getEpochRTC();    // Current time
-  } else {
-    epochTime_1 = getTimeEpoch();     // Current time
-  }
-
-  // saveTemp(SD, logsPath, epochTime_1);
-  // saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
-  // saveHumid(SD, logsPath, epochTime_1);
-  // saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
-  // //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
-  // //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-  // //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
-  
-  // saveTemp(SD, getTypePath(0), epochTime_1);
-  // saveDSBTemp(SD, getTypePath(2), epochTime_1, tempDSB);
-  // saveHumid(SD, getTypePath(1), epochTime_1);
-  // saveSolarIrr(SD, getTypePath(3), epochTime_1, ADCPIN, 1.0);
-  //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
-  //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-  //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
-
-  Serial.print("Current sample time: ");
-  Serial.println(sampleTime);
-
-  // Reading & saving in SD
-  tempDHT = readTemp();
-  humidDHT = readHumid();
-  tempDSB_reading = readDSBTemp(tempDSB);
-  solar = readSolarIrr(ADCPIN, solarIrrRatio);
-  airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
-  windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-  precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
-
-  // Checking for max & min
-  if(tempDSB_reading > maxTempDSB_reading) maxTempDSB_reading = tempDSB_reading;
-  if(tempDSB_reading < minTempDSB_reading) minTempDSB_reading = tempDSB_reading;
-  if(tempDHT > maxTempDHT) maxTempDHT = tempDHT;
-  if(tempDHT < minTempDHT) minTempDHT = tempDHT;
-  if(humidDHT > maxHumidDHT) maxHumidDHT = humidDHT;
-  if(humidDHT < minHumidDHT) minHumidDHT = humidDHT;
-  if(solar > maxSolar) maxSolar = solar;
-  if(solar < minSolar) minSolar = solar;
-  if(airflow > maxAirflow) maxAirflow = airflow;
-  if(airflow < minAirflow) minAirflow = airflow;
-  if(precip > maxPrecip) maxPrecip = precip;
-  if(precip < minPrecip) minPrecip = precip;
-  if(pressure > maxPressure) maxPressure = pressure;
-  if(pressure < minPressure) minPressure = pressure;
-
-  // Alarm checking
-
-
-  // Saving readings 
-  realTimeC += baseTime;         // Adding +1s
-  if(realTimeC >= sampleTime){
-    writeJsonlSD(SD, logsPath, readings, variables, 8, epochTime_1);
-    realTimeC = 0;
-  }
-
-  //Calibration
-  saveSolarIrr(SD, "/solarCalibration.txt", epochTime_1, ADCPIN, 1.0);
-
-  if(analogReadMilliVolts(ADCPIN)>3150){
-    digitalWrite(ledPin, HIGH);
-    Serial.println("ADC pin is too high!");
-    appendFileSD(SD, "/solarCalibration.txt", "Pin was too high!");
-  } else {
-    Serial.println("ADC pin low...");
-  }
-
-  Serial.println("RTC time: ");
-  rtcPrintTime();
-  Serial.println("Local time: ");
-  printLocalTime();
-
-  //Serial.println("local time: ");
-  //printLocalTime();
-
-  // getLocalTime(&tmstruct);
-  //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
-  // //Serial.println(date);
-  // Serial.println(date.hour());
-  // Serial.println(date.minute());
-
-  //////////
-  // dailyAverage();
-  // writeJsonlSD(SD, avgPath, avgReadings, variables, 8, 0);
-
-
-  // time is close to midnight, change path + compute averages
-  if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
-    // Compute averages first!
-    dailyAverage();
-    writeJsonlSD(SD, avgPath, avgReadings, variables, 8, epochTime_1);
-
-    // Save daily max-min
-    writeJsonlSD(SD, maxPath, maxReadings, variablesMaxMin, 7, epochTime_1);
-    writeJsonlSD(SD, minPath, minReadings, variablesMaxMin, 7, epochTime_1);
-    //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
-    //Serial.println(date);
-    Serial.println(date.hour());
-    Serial.println(date.minute());
-
-    //reset max-min
-    for(int i = 0; i < 7; i++){
-      *maxReadings[i] = -1;
-      *minReadings[i] = 9999;
+    epochTime_2 = epochTime_1;        // Past time for computing? most likely remove
+    if(isRTC) {                       // Prefer ext RTC
+      epochTime_1 = getEpochRTC();    // Current time
+    } else {
+      epochTime_1 = getTimeEpoch();     // Current time
     }
 
-    Serial.println("trying to change dir...");
-    changeDatePath();
-    changeLogsPath();
-    changeAvgPath();
-    changeMaxPath();
-    changeMinPath();
-  }
+    // saveTemp(SD, logsPath, epochTime_1);
+    // saveDSBTemp(SD, logsPath, epochTime_1, tempDSB);
+    // saveHumid(SD, logsPath, epochTime_1);
+    // saveSolarIrr(SD, logsPath, epochTime_1, ADCPIN, 1.0);
+    // //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
+    // //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+    // //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
+    
+    // saveTemp(SD, getTypePath(0), epochTime_1);
+    // saveDSBTemp(SD, getTypePath(2), epochTime_1, tempDSB);
+    // saveHumid(SD, getTypePath(1), epochTime_1);
+    // saveSolarIrr(SD, getTypePath(3), epochTime_1, ADCPIN, 1.0);
+    //saveAirflow(SD, logsPath, epochTime_1, ptrTimesAirflowSwitch, sampleTime, 1.0);
+    //saveWindDir(SD, logsPath, epochTime_1, WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+    //savePrecip(SD, logsPath, epochTime_1, ptrTimesPrecipSwitch, sampleTime, 1.0);
 
-  // Reattaching interrupts
-  attachInterrupt(AIRFLOWPIN, isrAirflow, FALLING);         // Might change later falling -> rising
-  attachInterrupt(PRECIPPIN, isrPrecip, FALLING);
-  
+
+    // Reading sensors
+    tempDHT = readTemp();
+    humid = readHumid();
+    temp = readDSBTemp(tempDSB);
+    solar = readSolarIrr(ADCPIN, solarIrrRatio);
+    airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
+    windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+    precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
+    // WebSocket sending readings
+    sendReadings(currentReadingsString(readings, variableName, 7, epochTime_1));
+
+    // Checking for max & min, fix pls
+    if(temp > maxTemp) maxTemp = temp;
+    if(temp < minTemp) minTemp = temp;
+    if(tempDHT > maxTempDHT) maxTempDHT = tempDHT;
+    if(tempDHT < minTempDHT) minTempDHT = tempDHT;
+    if(humid > maxHumid) maxHumid = humid;
+    if(humid < minHumid) minHumid = humid;
+    if(solar > maxSolar) maxSolar = solar;
+    if(solar < minSolar) minSolar = solar;
+    if(airflow > maxAirflow) maxAirflow = airflow;
+    if(airflow < minAirflow) minAirflow = airflow;
+    if(precip > maxPrecip) maxPrecip = precip;
+    if(precip < minPrecip) minPrecip = precip;
+    if(pressure > maxPressure) maxPressure = pressure;
+    if(pressure < minPressure) minPressure = pressure;
+
+
+
+    // Alarm checking
+
+
+    // Saving readings 
+    realTimeC += baseTime;         // Adding +1s
+    if(realTimeC >= sampleTime){
+      writeJsonlSD(SD, logsPath, readings, variableName, 7, epochTime_1);
+      realTimeC = 0;
+      Serial.println("RTC time: ");
+      rtcPrintTime();
+      Serial.println("Local time: ");
+      printLocalTime();
+      
+      Serial.print("Current sample time: ");
+      Serial.println(sampleTime);
+    }
+
+    // //Calibration
+    // saveSolarIrr(SD, "/solarCalibration.txt", epochTime_1, ADCPIN, 1.0);
+
+    // if(analogReadMilliVolts(ADCPIN)>3150){
+    //   digitalWrite(ledPin, HIGH);
+    //   Serial.println("ADC pin is too high!");
+    //   appendFileSD(SD, "/solarCalibration.txt", "Pin was too high!");
+    // } else {
+    //   Serial.println("ADC pin low...");
+    // }
+
+
+    //Serial.println("local time: ");
+    //printLocalTime();
+
+    // getLocalTime(&tmstruct);
+    //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+    // //Serial.println(date);
+    // Serial.println(date.hour());
+    // Serial.println(date.minute());
+
+    //////////
+    // dailyAverage();
+    // writeJsonlSD(SD, avgPath, avgReadings, variables, 8, 0);
+
+
+    // time is close to midnight, change path + compute averages
+    if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
+      // Compute averages first!
+      dailyAverage();
+      writeJsonlSD(SD, avgPath, avgReadings, variableName, 7, epochTime_1);
+
+      // Save daily max-min
+      writeJsonlSD(SD, maxPath, maxReadings, variablesMaxMin, 6, epochTime_1);
+      writeJsonlSD(SD, minPath, minReadings, variablesMaxMin, 6, epochTime_1);
+      //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
+      //Serial.println(date);
+      Serial.println(date.hour());
+      Serial.println(date.minute());
+
+      //reset max-min
+      for(int i = 0; i < 7; i++){
+        *maxReadings[i] = -1;
+        *minReadings[i] = 9999;
+      }
+
+      Serial.println("trying to change dir...");
+      changeDatePath();
+      changeLogsPath();
+      changeAvgPath();
+      changeMaxPath();
+      changeMinPath();
+    }
+
+    // Reattaching interrupts
+    attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
+    attachInterrupt(PRECIPPIN, precipISR, FALLING);
+    
+    alarmRTC = false;
+    rtc.clearAlarm(1);
+    ws.cleanupClients();
+  }
 }

@@ -1,4 +1,4 @@
-float readAirflow(int* timesSwitchActivated, int sampleTime, float airflowRatio){
+float readAirflow(volatile int* timesSwitchActivated, int sampleTime, float airflowRatio){
   float currentRead = -1;
   currentRead = (*timesSwitchActivated / (sampleTime / 1000)) * airflowRatio;   // Sample time in ms
   *timesSwitchActivated = 0;

@@ -1,0 +1,16 @@
+{"t":0, "sensor":"TemperatureDHT", "value":28.71}
+{"t":0, "sensor":"HumidityDHT", "value":47.41}
+{"t":0, "sensor":"TemperatureDSB", "value":28.61}
+{"t":0, "sensor":"Solar Irradiance", "value":142.00}
+{"t":0, "sensor":"Airflow", "value":0.00}
+{"t":0, "sensor":"Wind Direction", "value":-1.00}
+{"t":0, "sensor":"Precipitation", "value":0.00}
+{"t":0, "sensor":"Pressure", "value":-1.00}
+{"t":0, "sensor":"TemperatureDHT", "value":28.71}
+{"t":0, "sensor":"HumidityDHT", "value":47.41}
+{"t":0, "sensor":"TemperatureDSB", "value":28.61}
+{"t":0, "sensor":"Solar Irradiance", "value":142.00}
+{"t":0, "sensor":"Airflow", "value":0.00}
+{"t":0, "sensor":"Wind Direction", "value":-1.00}
+{"t":0, "sensor":"Precipitation", "value":0.00}
+{"t":0, "sensor":"Pressure", "value":-1.00}

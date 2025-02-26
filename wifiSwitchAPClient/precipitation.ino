@@ -1,4 +1,4 @@
-float readPrecip(int* timesSwitchActivated, int sampleTime, float precipRatio){
+float readPrecip(volatile int* timesSwitchActivated, int sampleTime, float precipRatio){
   float currentRead = -1;
   currentRead = (*timesSwitchActivated / (sampleTime / 1000)) * precipRatio;   // Sample time in ms
   *timesSwitchActivated = 0;
