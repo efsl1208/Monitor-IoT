@@ -62,12 +62,30 @@ int lowerMinLimit = 55;       // >= 55
 
 String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
 
+String minHumidString  = "9999";
+String minTempString  = "9999";
+String minSolarString  = "9999";
+String minAirflowString  = "9999";
+String minPrecipString  = "9999";
+String minPressureString  = "9999";
+String maxHumidString  = "-1";
+String maxTempString  = "-1";
+String maxSolarString  = "-1";
+String maxAirflowString  = "-1";
+String maxPrecipString  = "-1";
+String maxPressureString  = "-1";
+String* csvAlarmConfig[12] = {
+  &minHumidString, &minTempString, &minSolarString, &minAirflowString, &minPrecipString, &minPressureString,
+  &maxHumidString, &maxTempString, &maxSolarString, &maxAirflowString, &maxPrecipString, &maxPressureString
+  };
+
 // File paths to save input values permanently
 const char* credentialsPath = "/config/credentials.conf";
 const char* credentialsPathBackup = "/credentialsBackup.txt";
 const char* logsPathConst = "/logs.txt";
 const char* logsPathBacup = "/logsBackup.txt";
 const char* configPath = "/config.conf";
+const char* alarmConfigPath = "/alarm.conf";
 char logsPath[60] = "/logs.JSONL";
 char avgPath[60] = "/avg.JSONL";
 char maxPath[60] = "/max.JSONL";
@@ -87,6 +105,10 @@ unsigned long epochTime_2 = 0;
 time_t now;
 struct tm tmstruct;
 DateTime date;
+int oldestYear = 2025;
+int oldestMonth = 1;
+int oldestDay = 1;
+//int* oldestDate[3] = {&oldestYear, &oldestMonth, &oldestDay}; 
 
 // DHT definitions & config
 #define DHTPIN 4
@@ -148,7 +170,7 @@ float windDir = -1;
 float precip = -1;
 float pressure = -1;
 //float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
-float* readings[7] = {&humid, &temp, &solar, &airflow, &windDir, &precip, &pressure};
+float* readings[7] = {&humid, &temp, &solar, &airflow, &precip, &pressure, &windDir};
 
 // Max readings
 float maxTempDHT = -1;
@@ -159,7 +181,7 @@ float maxAirflow = -1;
 //float maxWindDir = -1;
 float maxPrecip = -1;
 float maxPressure = -1;
-//float* maxReadings[7] = {&maxTempDHT, &maxHumidDHT, &maxTempDSB_reading, &maxSolar, &maxAirflow, &maxPrecip, &maxPressure};
+//float* maxReadings[7] = {&maxHumid, &maxTemp, &maxSolar, &maxAirflow, &maxWindDir, &maxPrecip, &maxPressure};
 float* maxReadings[6] = {&maxHumid, &maxTemp, &maxSolar, &maxAirflow, &maxPrecip, &maxPressure};
 
 // Min readings
@@ -171,11 +193,26 @@ float minAirflow = 9999;
 //float minWindDir = 9999;
 float minPrecip = 9999;
 float minPressure = 9999;
-//float* minReadings[7] = {&minTempDHT, &minHumidDHT, &minTempDSB_reading, &minSolar, &minAirflow, &minPrecip, &minPressure};
+//float* minReadings[7] = {&minHumid, &minTemp, &minSolar, &minAirflow, &minWindDir, &minPrecip, &minPressure};
 float* minReadings[6] = {&minHumid, &minTemp, &minSolar, &minAirflow, &minPrecip, &minPressure};
 
 // Alarm limits
+float maxHumidLimit = 9999;
+float maxTempLimit = 9999;
+float maxSolarLimit = 9999;
+float maxAirflowLimit = 9999;
+float maxPrecipLimit = 9999;
+float maxPressureLimit = 9999;
+float* maxReadingsLimit[6] = {&maxHumidLimit, &maxTempLimit, &maxSolarLimit, &maxAirflowLimit, &maxPrecipLimit, &maxPressureLimit};
 
+// Alarm limits
+float minHumidLimit = -1;
+float minTempLimit = -1;
+float minSolarLimit = -1;
+float minAirflowLimit = -1;
+float minPrecipLimit = -1;
+float minPressureLimit = -1;
+float* minReadingsLimit[6] = {&minHumidLimit, &minTempLimit, &minSolarLimit, &minAirflowLimit, &minPrecipLimit, &minPressureLimit};
 
 // Variable names
 String tempDHTName = "TemperatureDHT";
@@ -189,8 +226,8 @@ String pressName = "presion";
 String timestName = "t";
 //String* variables[9] = {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
 //String* variablesMaxMin[8] =  {&timestName, &tempDHTName, &humidDHTName, &tempDSBName, &solarName, &airflowName, &precipName, &pressName};
-String* variableName[8] = {&timestName, &humidName, &tempName, &solarName, &airflowName, &windDirName, &precipName, &pressName};
-String* variablesMaxMin[7] =  {&timestName, &humidName, &tempName, &solarName, &airflowName, &precipName, &pressName};
+String* variableName[8] = {&timestName, &humidName, &tempName, &solarName, &airflowName, &precipName, &pressName, &windDirName};
+String* variablesMaxMinName[7] =  {&timestName, &humidName, &tempName, &solarName, &airflowName, &precipName, &pressName};
 
 // Average computation
 //int nReadings[8];
@@ -206,7 +243,7 @@ float avgWindDir = -1;        // check?
 float avgPrecip = -1;
 float avgPressure = -1;
 //float* avgReadings[8] = {&avgTempDHT, &avgHumidDHT, &avgTempDSB_reading, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
-float* avgReadings[7] = {&avgHumid, &avgTemp, &avgSolar, &avgAirflow, &avgWindDir, &avgPrecip, &avgPressure};
+float* avgReadings[7] = {&avgHumid, &avgTemp, &avgSolar, &avgAirflow, &avgPrecip, &avgPressure, &avgWindDir};
 
 // Extern functions
 // RTC DS3231
@@ -402,7 +439,7 @@ String currentReadingsString(float* values[], String* identifier[], int arrayLen
   char nBuffer[20] = "";    // Name buffer
   String reads = "";
   //strcpy(buffer, "{tipo: \"sensorData\", data:{t:");       // Timestamp name hardcoded to "t", maybe change
-  strcpy(buffer, "{ \"type\": \"sensorData\", \"data\": { ");       // Timestamp name hardcoded to "t", maybe change
+  strcpy(buffer, "{ \"type\": \"sensorData\", \"data\": { ");       
   //sprintf(nBuffer, "%lu", epochTime);
   //strcat(buffer, nBuffer);
   //strcat(buffer, ", {");
@@ -411,7 +448,7 @@ String currentReadingsString(float* values[], String* identifier[], int arrayLen
     strcat(buffer, "\"");
     strcpy(nBuffer, identifier[i+1]->c_str());
     strcat(buffer, nBuffer);
-    strcat(buffer, "\": { \"t\": ");
+    strcat(buffer, "\": { \"t\": ");          // Timestamp name hardcoded to "t", maybe change
     sprintf(nBuffer, "%lu", epochTime);
     strcat(buffer, nBuffer);
     strcat(buffer, ", \"sensor\": \"");
@@ -429,6 +466,34 @@ String currentReadingsString(float* values[], String* identifier[], int arrayLen
   return reads;
 }
 
+// Alarm to String
+String alarmString(float* values[], String* identifier[], int i, bool eventHL){     // eventHL true -> bajo, eventHL false -> alto
+  Serial.print("Preparing alarm String for ws...");
+  char buffer[300] = "";
+  char nBuffer[20] = "";
+  String alarm = "";
+  // char eventType[10] = "";
+  // if(eventHL){
+  //   eventType = "bajo";
+  // } else {
+  //   eventType = "alto";
+  // }
+  strcpy(buffer, "{ \"type\": \"criticalEvent\", \"data\": { \"sensor\": \"");
+  strcpy(nBuffer, identifier[i+1]->c_str());
+  strcat(buffer, nBuffer);
+  strcat(buffer, "\", \"value\": ");
+  sprintf(nBuffer, "%.2f", *values[i]);
+  strcat(buffer, nBuffer);
+  strcat(buffer, ", \"eventType\": \"");
+  if(eventHL){
+    strcat(buffer, "bajo");
+  } else {
+    strcat(buffer, "alto");
+  }
+  strcat(buffer, "\" } }");
+
+  return alarm;
+}
 
 // WS event handler
 void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType type, void *arg, uint8_t *data, size_t len) {
@@ -460,6 +525,71 @@ void handleWSMessage(void *arg, uint8_t *data, size_t len) {
     }
   }
 }
+
+// Check oldest date registered
+void oldestDate(){
+  //String oldestD = "";
+  char yearPath[10] = "/2025";
+  char monthPath[15] = "/2025/1";
+  char dayPath[20] = "/2025/1/1";
+  char buffer[10] = "";
+  int currentYear = date.year();
+  int currentMonth = 1;
+  int currentDay = 1;
+
+  // Checks for current year
+  strcpy(yearPath, "/");
+  sprintf(buffer, "%d", currentYear);
+  strcat(yearPath, buffer);
+  while(SD.exists(yearPath)){
+    oldestYear = currentYear;
+    currentYear += -1;
+    
+    strcpy(yearPath, "/");
+    sprintf(buffer, "%d", currentYear);
+    strcat(yearPath, buffer);
+  }
+  // Checks for oldest month registered
+  strcpy(yearPath, "/");
+  sprintf(buffer, "%d", oldestYear);
+  strcat(yearPath, buffer);
+  strcpy(monthPath, yearPath);
+  strcat(monthPath, "/");
+  sprintf(buffer, "%d", currentMonth);
+  strcat(monthPath, buffer);
+  while(!SD.exists(monthPath)){
+    currentMonth += 1;
+    oldestMonth = currentMonth;
+    strcpy(monthPath, yearPath);
+    strcat(monthPath, "/");
+    sprintf(buffer, "%d", currentMonth);
+    strcat(monthPath, buffer);
+  }
+  //Checks for oldest day registered
+  strcpy(monthPath, yearPath);
+  strcat(monthPath, "/");
+  sprintf(buffer, "%d", oldestMonth);
+  strcat(monthPath, buffer);
+  strcpy(dayPath, monthPath);
+  strcat(dayPath, "/");
+  sprintf(buffer, "%d", currentDay);
+  strcat(dayPath, buffer);
+  while(!SD.exists(dayPath)){
+    currentDay += 1;
+    oldestDay = currentDay;
+    strcpy(dayPath, monthPath);
+    strcat(dayPath, "/");
+    sprintf(buffer, "%d", currentDay);
+    strcat(dayPath, buffer);
+  }
+  Serial.print("Oldest date: ");
+  Serial.print(oldestYear);
+  Serial.print("-");
+  Serial.print(oldestMonth);
+  Serial.print("-");
+  Serial.println(oldestDay);
+}
+
 
 // Replaces placeholder with LED state value
 // String processor(const String& var) {
@@ -878,13 +1008,21 @@ void setup() {
   if(isInitSD){
     rawTextLine = readFileSD(SD, configPath);
     parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+    rawTextLine = readFileSD(SD, alarmConfigPath);
+    parse_csv(csvAlarmConfig, &rawTextLine, ",", 12);
   }
-
+  // String to int
   sampleTime = atoi(sampleTimeString.c_str());
   upperHourLimit = atoi(upperHourLimitS.c_str());       
   lowerHourLimit = atoi(lowerHourLimitS.c_str());      
   upperMinLimit =  atoi(upperMinLimitS.c_str());       
-  lowerMinLimit =  atoi(lowerMinLimitS.c_str());       
+  lowerMinLimit =  atoi(lowerMinLimitS.c_str());
+  // Alarm String to float   
+  for(int i = 0; i < 6; i++){
+    *minReadingsLimit[i] = atof(csvAlarmConfig[i]->c_str());
+    *maxReadingsLimit[i] = atof(csvAlarmConfig[i + 6]->c_str());
+  }
+
 
   if(mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
 
@@ -1133,25 +1271,35 @@ void loop() {
     // WebSocket sending readings
     sendReadings(currentReadingsString(readings, variableName, 7, epochTime_1));
 
-    // Checking for max & min, fix pls
-    if(temp > maxTemp) maxTemp = temp;
-    if(temp < minTemp) minTemp = temp;
-    if(tempDHT > maxTempDHT) maxTempDHT = tempDHT;
-    if(tempDHT < minTempDHT) minTempDHT = tempDHT;
-    if(humid > maxHumid) maxHumid = humid;
-    if(humid < minHumid) minHumid = humid;
-    if(solar > maxSolar) maxSolar = solar;
-    if(solar < minSolar) minSolar = solar;
-    if(airflow > maxAirflow) maxAirflow = airflow;
-    if(airflow < minAirflow) minAirflow = airflow;
-    if(precip > maxPrecip) maxPrecip = precip;
-    if(precip < minPrecip) minPrecip = precip;
-    if(pressure > maxPressure) maxPressure = pressure;
-    if(pressure < minPressure) minPressure = pressure;
+    // // Checking for max & min, fix pls
+    // if(temp > maxTemp) maxTemp = temp;
+    // if(temp < minTemp) minTemp = temp;
+    // if(tempDHT > maxTempDHT) maxTempDHT = tempDHT;
+    // if(tempDHT < minTempDHT) minTempDHT = tempDHT;
+    // if(humid > maxHumid) maxHumid = humid;
+    // if(humid < minHumid) minHumid = humid;
+    // if(solar > maxSolar) maxSolar = solar;
+    // if(solar < minSolar) minSolar = solar;
+    // if(airflow > maxAirflow) maxAirflow = airflow;
+    // if(airflow < minAirflow) minAirflow = airflow;
+    // if(precip > maxPrecip) maxPrecip = precip;
+    // if(precip < minPrecip) minPrecip = precip;
+    // if(pressure > maxPressure) maxPressure = pressure;
+    // if(pressure < minPressure) minPressure = pressure;
 
-
-
-    // Alarm checking
+    for(int i = 0; i < 6; i++){
+      if(*readings[i] > *maxReadings[i]) *maxReadings[i] = *readings[i];
+      if(*readings[i] < *minReadings[i]) *minReadings[i] = *readings[i];
+      // Alarm checking
+      if(*readings[i] > *maxReadingsLimit[i]){
+        //Send alarm High
+        sendReadings(alarmString(readings, variableName, i, false)); 
+      }
+      if(*readings[i] < *minReadingsLimit[i]){
+        //Send alarm Low
+        sendReadings(alarmString(readings, variableName, i, true));
+      }
+    }
 
 
     // Saving readings 
@@ -1201,8 +1349,8 @@ void loop() {
       writeJsonlSD(SD, avgPath, avgReadings, variableName, 7, epochTime_1);
 
       // Save daily max-min
-      writeJsonlSD(SD, maxPath, maxReadings, variablesMaxMin, 6, epochTime_1);
-      writeJsonlSD(SD, minPath, minReadings, variablesMaxMin, 6, epochTime_1);
+      writeJsonlSD(SD, maxPath, maxReadings, variablesMaxMinName, 6, epochTime_1);
+      writeJsonlSD(SD, minPath, minReadings, variablesMaxMinName, 6, epochTime_1);
       //DateTime date = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
       //Serial.println(date);
       Serial.println(date.hour());
