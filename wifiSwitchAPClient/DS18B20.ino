@@ -7,8 +7,8 @@ void initDSBTemp(OneWire tempDSB){
 float readDSBTemp(DallasTemperature sensor){
   sensor.requestTemperatures();
   float t = sensor.getTempCByIndex(0);
-  Serial.print(t);
-  Serial.println(" C");
+  // Serial.print(t);
+  // Serial.println(" C");
   return t;
 }
 

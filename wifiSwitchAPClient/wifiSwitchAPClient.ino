@@ -12,6 +12,7 @@
 #include <OneWire.h>
 #include <DallasTemperature.h>
 #include <HTTPClient.h>
+#include <esp_task_wdt.h>
 
 /*    Pins usage
 /     2: Led
@@ -28,6 +29,9 @@
 /     34: ADC (Solar Irr)
 */
 
+
+char bigBuffer[50400] = "";      // feels wrong
+
 // RTC & time variables
 String sampleTimeString = "5000";     // default sample time in ms
 int sampleTime = 5000;
@@ -36,6 +40,7 @@ int baseTime = 1000;                  // base sample time for real time measurem
 int realTimeC = 0;
 #define RTCINTERRUPTPIN 15            // for consistent readings
 volatile bool alarmRTC = false;       // flag for alarm
+long gmtOffset = -14400;
 
 // Variables to save values from HTML form
 String mode;
@@ -62,18 +67,18 @@ int lowerMinLimit = 55;       // >= 55
 
 String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
 
-String minHumidString  = "9999";
-String minTempString  = "9999";
-String minSolarString  = "9999";
-String minAirflowString  = "9999";
-String minPrecipString  = "9999";
-String minPressureString  = "9999";
-String maxHumidString  = "-1";
-String maxTempString  = "-1";
-String maxSolarString  = "-1";
-String maxAirflowString  = "-1";
-String maxPrecipString  = "-1";
-String maxPressureString  = "-1";
+String maxHumidString  = "9999";
+String maxTempString  = "9999";
+String maxSolarString  = "9999";
+String maxAirflowString  = "9999";
+String maxPrecipString  = "9999";
+String maxPressureString  = "9999";
+String minHumidString  = "-1";
+String minTempString  = "-1";
+String minSolarString  = "-1";
+String minAirflowString  = "-1";
+String minPrecipString  = "-1";
+String minPressureString  = "-1";
 String* csvAlarmConfig[12] = {
   &minHumidString, &minTempString, &minSolarString, &minAirflowString, &minPrecipString, &minPressureString,
   &maxHumidString, &maxTempString, &maxSolarString, &maxAirflowString, &maxPrecipString, &maxPressureString
@@ -108,6 +113,7 @@ DateTime date;
 int oldestYear = 2025;
 int oldestMonth = 1;
 int oldestDay = 1;
+int currentDay = -1;
 //int* oldestDate[3] = {&oldestYear, &oldestMonth, &oldestDay}; 
 
 // DHT definitions & config
@@ -172,6 +178,12 @@ float pressure = -1;
 //float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
 float* readings[7] = {&humid, &temp, &solar, &airflow, &precip, &pressure, &windDir};
 
+// Variables to send data
+String start;
+String end;
+String sensor;
+String frequency;
+
 // Max readings
 float maxTempDHT = -1;
 float maxHumid = -1;
@@ -213,6 +225,12 @@ float minAirflowLimit = -1;
 float minPrecipLimit = -1;
 float minPressureLimit = -1;
 float* minReadingsLimit[6] = {&minHumidLimit, &minTempLimit, &minSolarLimit, &minAirflowLimit, &minPrecipLimit, &minPressureLimit};
+
+// Alarm control
+bool activeAlarm[12] = {false};
+long unsigned startAlarmTime[12] = {0};
+long unsigned endAlarmTime[12] = {0};
+bool sensorAlarm = false;
 
 // Variable names
 String tempDHTName = "TemperatureDHT";
@@ -303,7 +321,10 @@ const char* PARAM_INPUT_2 = "pass";
 const char* PARAM_INPUT_3 = "ip";
 const char* PARAM_INPUT_4 = "gateway";
 const char* PARAM_INPUT_5 = "admin_pass";
-
+const char* PARAM_DATA_0 = "start";
+const char* PARAM_DATA_1 = "end";
+const char* PARAM_DATA_2 = "sensor";
+const char* PARAM_DATA_3 = "frequency";
 // IP variables
 IPAddress localIP;
 
@@ -434,7 +455,7 @@ void sendReadings(String data){
 
 // Current readings to String
 String currentReadingsString(float* values[], String* identifier[], int arrayLength, int epochTime){
-  Serial.print("Preparing data for ws...");
+  // Serial.print("Preparing data for ws...");
   char buffer[600] = "";    // Might be overkill
   char nBuffer[20] = "";    // Name buffer
   String reads = "";
@@ -462,7 +483,7 @@ String currentReadingsString(float* values[], String* identifier[], int arrayLen
   }
   strcat(buffer, "}}");
   reads = buffer;
-  Serial.println(reads);
+  // Serial.println(reads);
   return reads;
 }
 
@@ -491,7 +512,8 @@ String alarmString(float* values[], String* identifier[], int i, bool eventHL){ 
     strcat(buffer, "alto");
   }
   strcat(buffer, "\" } }");
-
+  alarm = buffer;
+  Serial.println(alarm);
   return alarm;
 }
 
@@ -533,20 +555,20 @@ void oldestDate(){
   char monthPath[15] = "/2025/1";
   char dayPath[20] = "/2025/1/1";
   char buffer[10] = "";
-  int currentYear = date.year();
-  int currentMonth = 1;
-  int currentDay = 1;
+  int compYear = date.year();       // Compare values
+  int compMonth = 1;
+  int compDay = 1;
 
   // Checks for current year
   strcpy(yearPath, "/");
-  sprintf(buffer, "%d", currentYear);
+  sprintf(buffer, "%d", compYear);
   strcat(yearPath, buffer);
   while(SD.exists(yearPath)){
-    oldestYear = currentYear;
-    currentYear += -1;
+    oldestYear = compYear;
+    compYear += -1;
     
     strcpy(yearPath, "/");
-    sprintf(buffer, "%d", currentYear);
+    sprintf(buffer, "%d", compYear);
     strcat(yearPath, buffer);
   }
   // Checks for oldest month registered
@@ -555,14 +577,14 @@ void oldestDate(){
   strcat(yearPath, buffer);
   strcpy(monthPath, yearPath);
   strcat(monthPath, "/");
-  sprintf(buffer, "%d", currentMonth);
+  sprintf(buffer, "%d", compMonth);
   strcat(monthPath, buffer);
   while(!SD.exists(monthPath)){
-    currentMonth += 1;
-    oldestMonth = currentMonth;
+    compMonth += 1;
+    oldestMonth = compMonth;
     strcpy(monthPath, yearPath);
     strcat(monthPath, "/");
-    sprintf(buffer, "%d", currentMonth);
+    sprintf(buffer, "%d", compMonth);
     strcat(monthPath, buffer);
   }
   //Checks for oldest day registered
@@ -572,14 +594,14 @@ void oldestDate(){
   strcat(monthPath, buffer);
   strcpy(dayPath, monthPath);
   strcat(dayPath, "/");
-  sprintf(buffer, "%d", currentDay);
+  sprintf(buffer, "%d", compDay);
   strcat(dayPath, buffer);
   while(!SD.exists(dayPath)){
-    currentDay += 1;
-    oldestDay = currentDay;
+    compDay += 1;
+    oldestDay = compDay;
     strcpy(dayPath, monthPath);
     strcat(dayPath, "/");
-    sprintf(buffer, "%d", currentDay);
+    sprintf(buffer, "%d", compDay);
     strcat(dayPath, buffer);
   }
   Serial.print("Oldest date: ");
@@ -588,6 +610,43 @@ void oldestDate(){
   Serial.print(oldestMonth);
   Serial.print("-");
   Serial.println(oldestDay);
+}
+
+// Oldest date available to String
+String oldestDateString(){
+  Serial.print("Preparing date String for HTTP GET...");
+  char buffer[300] = "";
+  char nBuffer[20] = "";
+  String oldest = "";
+  // char eventType[10] = "";
+  // if(eventHL){
+  //   eventType = "bajo";
+  // } else {
+  //   eventType = "alto";
+  // }
+  strcpy(buffer, "[\"");
+  sprintf(nBuffer, "%d", oldestYear);
+  strcat(buffer, nBuffer);
+  strcat(buffer, "-");
+  sprintf(nBuffer, "%02d", oldestMonth);
+  strcat(buffer,nBuffer);
+  strcat(buffer, "-");
+  sprintf(nBuffer, "%02d", oldestDay);
+  strcat(buffer, nBuffer);
+  strcat(buffer, "\", \"");
+  sprintf(nBuffer, "%d", date.year());
+  strcat(buffer, nBuffer);
+  strcat(buffer, "-");
+  sprintf(nBuffer, "%02d", date.month());
+  strcat(buffer,nBuffer);
+  strcat(buffer, "-");
+  sprintf(nBuffer, "%02d", date.day());
+  strcat(buffer, nBuffer);
+  strcat(buffer, "\"]");
+
+  oldest = buffer;
+  Serial.println(oldest);
+  return oldest;
 }
 
 
@@ -820,50 +879,6 @@ void dailyAverage(){
         cReadings[i] += atof(individual[2][1].c_str());
       }
     }
-
-
-    // switch(individual[1][1]){
-    //   case *variables[1]:
-    //     nReadings[0]++;
-    //     cReadings[0] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[2]:
-    //     nReadings[1]++;
-    //     cReadings[1] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[3]:
-    //     nReadings[2]++;
-    //     cReadings[2] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[4]:
-    //     nReadings[3]++;
-    //     cReadings[3] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[5]:
-    //     nReadings[4]++;
-    //     cReadings[4] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[6]:
-    //     nReadings[5]++;
-    //     cReadings[5] += atof(individual[2][1].c_str());
-    //     break;
-      
-    //   case *variables[7]:
-    //     nReadings[6]++;
-    //     cReadings[6] += atof(individual[2][1].c_str());
-    //     break;
-        
-    //   case *variables[8]:
-    //     nReadings[7]++;
-    //     cReadings[7] += atof(individual[2][1].c_str());
-    //     break;
-      
-    // }
   }
 
   for(int i = 0; i < 7; i++){
@@ -876,6 +891,84 @@ void dailyAverage(){
 
   Serial.print("Averages computed..."); 
   file.close();
+}
+
+// Returns data from specified sensor in String
+String sensorData(String startTime, String endTime, String variable, String frequency){      
+  String dataString = "";
+  String line = "init";
+  //Serial.print("Trying to create big buffer...");
+  //char bigBuffer[50400] = "";      // feels wrong
+  //Serial.println("Done!");
+  char pathBuffer[30] = "";
+  char dBuffer[10] = "";
+  Serial.println(strtoul(startTime.c_str(), NULL, 0));
+  DateTime selectedDate = DateTime(strtoul(startTime.c_str(), NULL, 0));
+  //time_t selectedDate = startTime.toInt();
+  bool coma = false;
+  int selectedDay = selectedDate.day();
+  int selectedMonth = selectedDate.month();
+  int selectedYear = selectedDate.year();
+  
+  strcpy(pathBuffer, "/");
+  sprintf(dBuffer, "%d", selectedYear);
+  strcat(pathBuffer, dBuffer);
+  if(frequency != "anual"){
+    strcat(pathBuffer, "/");
+    sprintf(dBuffer, "%d", selectedMonth);
+    strcat(pathBuffer, dBuffer); 
+    // Read daily avg for selected month
+  }
+
+  if(frequency == "daily"){
+    strcat(pathBuffer, "/");
+    sprintf(dBuffer, "%d", selectedYear);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "-");
+    sprintf(dBuffer, "%d", selectedMonth);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "-");
+    sprintf(dBuffer, "%d", selectedDay);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, ".JSONL");
+
+    Serial.println(pathBuffer);
+
+    File file = SD.open(pathBuffer);
+    if(!file){
+      Serial.println("Failed to open file to send data...");
+      return "";
+    }
+    //strcpy(buffer, "{ \"data\": [");
+    strcpy(bigBuffer, "[ ");
+    coma = true;
+    while(!(line == "")){
+      String group[3];
+      String individual[3][2];
+      line = "";
+      line = readLineSD(file);
+      splitString(line, group, ',');
+      for(int i = 0; i < 3; i++){
+        splitString(group[i],individual[i],':');
+      }
+
+      if(individual[1][1] == variable){   // Checks for selected variable
+        if(!coma){
+          strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
+          coma = true;
+        }
+        strcat(bigBuffer, line.c_str());
+        coma = false;
+      }
+      esp_task_wdt_reset();
+    }
+    strcat(bigBuffer, "]");  
+    file.close();
+  }
+
+  Serial.print("Data read..."); 
+
+  return bigBuffer;
 }
 
 //testing
@@ -1007,9 +1100,9 @@ void setup() {
   // Config reading
   if(isInitSD){
     rawTextLine = readFileSD(SD, configPath);
-    parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+    if(rawTextLine != "") parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
     rawTextLine = readFileSD(SD, alarmConfigPath);
-    parse_csv(csvAlarmConfig, &rawTextLine, ",", 12);
+    if(rawTextLine != "") parse_csv(csvAlarmConfig, &rawTextLine, ",", 12);
   }
   // String to int
   sampleTime = atoi(sampleTimeString.c_str());
@@ -1021,6 +1114,13 @@ void setup() {
   for(int i = 0; i < 6; i++){
     *minReadingsLimit[i] = atof(csvAlarmConfig[i]->c_str());
     *maxReadingsLimit[i] = atof(csvAlarmConfig[i + 6]->c_str());
+    Serial.print("Alarm limit low: ");
+    Serial.println(*csvAlarmConfig[i]);
+    Serial.println(*minReadingsLimit[i]);
+    Serial.print("Alarm limit high: ");
+    Serial.println(*csvAlarmConfig[i+6]);
+    Serial.println(*maxReadingsLimit[i]);
+      
   }
 
 
@@ -1046,6 +1146,49 @@ void setup() {
     });
     server.serveStatic("/", LittleFS, "/");
 
+    server.on("/dates", HTTP_GET, [](AsyncWebServerRequest* request){
+      Serial.println("Trying to send dates...");
+      oldestDate();
+      request->send(200, "application/json", oldestDateString());
+    });
+
+    server.on("/data", HTTP_GET, [](AsyncWebServerRequest* request){
+      int params = request->params();
+
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->name() == PARAM_DATA_0) {
+          start = p->value().c_str();
+          Serial.print("Start time set to: ");
+          Serial.println(start);
+        }
+        // HTTP GET end time
+        end = "0";
+        if (p->name() == PARAM_DATA_1) {
+          end = p->value().c_str();
+          Serial.print("End time set to: ");
+          Serial.println(end);
+        }
+        // HTTP GET sensor name
+        if (p->name() == PARAM_DATA_2) {
+          sensor = p->value().c_str();
+          Serial.print("Sensor set to: ");
+          Serial.println(sensor);
+        }
+        // HTTP GET frequency
+        if (p->name() == PARAM_DATA_3) {
+          frequency = p->value().c_str();
+          Serial.print("Frequency: ");
+          Serial.println(frequency);
+        }
+      }
+
+
+      // Only daily working
+      request->send(200, "application/json", sensorData(start, end, sensor, frequency));
+    });
+
+
     // // Route to set GPIO state to HIGH
     // server.on("/on", HTTP_GET, [](AsyncWebServerRequest* request) {
     //   digitalWrite(ledPin, HIGH);
@@ -1059,12 +1202,13 @@ void setup() {
     // });
 
     // Time config (UTC)
-    configTime(0, 0, ntpServer, ntpServer1);
+    configTime(gmtOffset, 0, ntpServer, ntpServer1);
+    delay(5000);
     Serial.println("Time tried to be set...");
     printLocalTime();
-    delay(5000);
+    delay(2000);
     getLocalTime(&tmstruct);
-    if(isRTC) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
+    if(isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
     
     server.begin();
 
@@ -1203,6 +1347,7 @@ void setup() {
   changeAvgPath();
   changeMaxPath();
   changeMinPath();
+  currentDay = date.day();
 
   // Info
   Serial.print("Current sample time: ");
@@ -1293,27 +1438,48 @@ void loop() {
       // Alarm checking
       if(*readings[i] > *maxReadingsLimit[i]){
         //Send alarm High
-        sendReadings(alarmString(readings, variableName, i, false)); 
+        sendReadings(alarmString(readings, variableName, i, false));
+        activeAlarm[i + 6] = true; 
+        startAlarmTime[i + 6] = epochTime_1;
+        sensorAlarm = true;
       }
       if(*readings[i] < *minReadingsLimit[i]){
         //Send alarm Low
         sendReadings(alarmString(readings, variableName, i, true));
+        activeAlarm[i] = true;
+        startAlarmTime[i] = epochTime_1;
+        sensorAlarm = true;
       }
     }
 
+    // Checking if value is still is alarm state
+    if(sensorAlarm){
+      for(int i = 0; i < 6; i++){
+        if(activeAlarm[i] && (*readings[i] > *minReadingsLimit[i])){
+          endAlarmTime[i] = epochTime_1;
+          sensorAlarm = false;
+        }
+      }
+      for(int i = 6; i < 12; i++){
+        if(activeAlarm[i] && (*readings[i] < *maxReadingsLimit[i])){
+          endAlarmTime[i] = epochTime_1;
+          sensorAlarm = false;
+        }
+      }
+    }
 
     // Saving readings 
     realTimeC += baseTime;         // Adding +1s
     if(realTimeC >= sampleTime){
       writeJsonlSD(SD, logsPath, readings, variableName, 7, epochTime_1);
       realTimeC = 0;
-      Serial.println("RTC time: ");
-      rtcPrintTime();
-      Serial.println("Local time: ");
-      printLocalTime();
+      // Serial.println("RTC time: ");
+      // rtcPrintTime();
+      // Serial.println("Local time: ");
+      // printLocalTime();
       
-      Serial.print("Current sample time: ");
-      Serial.println(sampleTime);
+      // Serial.print("Current sample time: ");
+      // Serial.println(sampleTime);
     }
 
     // //Calibration
@@ -1343,7 +1509,8 @@ void loop() {
 
 
     // time is close to midnight, change path + compute averages
-    if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
+    //if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
+    if(date.day() != currentDay){
       // Compute averages first!
       dailyAverage();
       writeJsonlSD(SD, avgPath, avgReadings, variableName, 7, epochTime_1);
@@ -1363,6 +1530,7 @@ void loop() {
       }
 
       Serial.println("trying to change dir...");
+      currentDay = date.day();
       changeDatePath();
       changeLogsPath();
       changeAvgPath();

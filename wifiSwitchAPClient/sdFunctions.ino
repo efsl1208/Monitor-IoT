@@ -183,8 +183,8 @@ void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identif
     strcat(buffer, "}\n");
 
     file.print(buffer);
-    Serial.print("Text to save: ");
-    Serial.println(buffer);
+    // Serial.print("Text to save: ");
+    // Serial.println(buffer);
   }
   file.close();
   Serial.print("File written at: ");
