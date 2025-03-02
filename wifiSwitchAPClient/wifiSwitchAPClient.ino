@@ -93,9 +93,11 @@ const char* configPath = "/config.conf";
 const char* alarmConfigPath = "/alarm.conf";
 char logsPath[60] = "/logs.JSONL";
 char avgPath[60] = "/avg.JSONL";
+char monthAvgPath[60] = "/monthAvg.JSONL";
 char maxPath[60] = "/max.JSONL";
 char minPath[60] = "/min.JSONL";
 char datePath[30];
+char currentDateChar[20] = "";
 
 // Logic variables
 bool should_restart = false;
@@ -285,6 +287,8 @@ extern void appendFileSD();
 extern void appendFileDebugSD();
 extern void appendCSVFileSD();
 extern void writeJsonlSD();
+extern void writeJsonlSDDebug();
+extern void writeSingleSensorSD();
 extern void deleteFileSD();
 // Solar Irradiance
 extern float readSolarIrr();
@@ -379,6 +383,34 @@ unsigned long getTimeEpoch(){
   }
   time(&now);
   return now;
+}
+
+// Return epoch for given day
+unsigned long getTimeEpoch(int year, int month, int day){
+  unsigned long rtn = 0;
+  // struct tm tv;
+  // //tv.tm_sec = 0;
+  // //tv.tm_usec = 0;
+  // Serial.println("Trying to assign y/m/d");
+  // tv.tm_year = year;
+  // tv.tm_mon = month;
+  // tv.tm_mday = day;
+  // Serial.println("tv assigned...");
+  // time_t tt = mktime(&tv);
+  // Serial.println("tt assigned...");
+  // //settimeofday(&tv, NULL);
+  // rtn = tt;
+  // Serial.print("tt value: ");
+  // Serial.println(tt);
+  // //updateTime();
+  for(int i = 1970; i < year; i++){
+    rtn += (337 + daysInMonth(i, 2))*86400;     // 86400 secs in a day
+  }
+  for(int i = 1; i < month; i++){
+    rtn += (daysInMonth(year, i))*86400;
+  }
+  rtn += (day - 1) * 86400;
+  return rtn;
 }
 
 // Sets time from epoch
@@ -570,6 +602,8 @@ void oldestDate(){
     strcpy(yearPath, "/");
     sprintf(buffer, "%d", compYear);
     strcat(yearPath, buffer);
+    Serial.print("found older date: ");
+    Serial.println(buffer);
   }
   // Checks for oldest month registered
   strcpy(yearPath, "/");
@@ -586,6 +620,9 @@ void oldestDate(){
     strcat(monthPath, "/");
     sprintf(buffer, "%d", compMonth);
     strcat(monthPath, buffer);
+    
+    Serial.print("found older date: ");
+    Serial.println(buffer);
   }
   //Checks for oldest day registered
   strcpy(monthPath, yearPath);
@@ -603,6 +640,9 @@ void oldestDate(){
     strcat(dayPath, "/");
     sprintf(buffer, "%d", compDay);
     strcat(dayPath, buffer);
+    
+    Serial.print("found older date: ");
+    Serial.println(buffer);
   }
   Serial.print("Oldest date: ");
   Serial.print(oldestYear);
@@ -737,19 +777,58 @@ char* getTypePath(int type){                // 0: temp DHT, 1: humid DHT, 2: tem
   return logsPath;
 }
 
+// Returns date YYYY-MM-DD
+void currentDate(){
+  Serial.println("trying to get current date...");
+  char buffer[20] = "";
+  char b[5] = "";
+  //strcpy(buffer, datePath);
+  strcpy(buffer, "");
+  sprintf(b, "%d", date.year());
+  strcat(buffer, b);
+  strcat(buffer, "-");
+  sprintf(b, "%02d", date.month());
+  strcat(buffer, b);
+  strcat(buffer, "-");
+  sprintf(b, "%02d", date.day());
+  strcat(buffer, b);
+  Serial.print("date fetch: ");
+  Serial.println(buffer);
+  strcpy(currentDateChar, buffer);
+  //return buffer;
+}
+
+// Returns current month YYYY-MM
+void currentMonth(){
+  Serial.println("trying to get current month...");
+  char buffer[20] = "";
+  char b[5] = "";
+  //strcpy(buffer, datePath);
+  strcpy(buffer, "");
+  sprintf(b, "%d", date.year());
+  strcat(buffer, b);
+  strcat(buffer, "-");
+  sprintf(b, "%02d", date.month());
+  strcat(buffer, b);
+  strcat(buffer, "-");
+  Serial.print("month fetch: ");
+  Serial.println(buffer);
+  strcpy(currentDateChar, buffer);
+}
+
 // Changes logs path, .../YYYY-MM-DD.JSONL
 void changeLogsPath(){
   //DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
-  char buffer[4] = "";    //"YYYY-MM-DD"
+  char buffer[5] = "";    //"YYYY-MM-DD"
   strcpy(logsPath, datePath);
   strcat(logsPath, "/");
   sprintf(buffer, "%d", date.year());
   strcat(logsPath, buffer);
   strcat(logsPath, "-");
-  sprintf(buffer, "%d", date.month());
+  sprintf(buffer, "%02d", date.month());
   strcat(logsPath, buffer);
   strcat(logsPath, "-");
-  sprintf(buffer, "%d", date.day());
+  sprintf(buffer, "%02d", date.day());
   strcat(logsPath, buffer);
   strcat(logsPath, ".JSONL");       
 
@@ -767,16 +846,16 @@ void changeLogsPath(){
 // Changes averages log path, .../YYYY-MM-DD_avg.JSONL
 void changeAvgPath(){
 
-  char buffer[4] = "";    //"YYYY-MM-DD"
+  char buffer[5] = "";    //"YYYY-MM-DD"
   strcpy(avgPath, datePath);
   strcat(avgPath, "/");
   sprintf(buffer, "%d", date.year());
   strcat(avgPath, buffer);
   strcat(avgPath, "-");
-  sprintf(buffer, "%d", date.month());
+  sprintf(buffer, "%02d", date.month());
   strcat(avgPath, buffer);
   strcat(avgPath, "-");
-  sprintf(buffer, "%d", date.day());
+  sprintf(buffer, "%02d", date.day());
   strcat(avgPath, buffer);
   strcat(avgPath, "_avg.JSONL");       
 
@@ -785,19 +864,37 @@ void changeAvgPath(){
 
 }
 
+void changeMonthAvgPath(){
+  char buffer[5] = "";
+  
+  strcpy(monthAvgPath, "/");
+  sprintf(buffer, "%d", date.year());
+  strcat(monthAvgPath, buffer);
+  strcat(monthAvgPath, "/");
+  strcat(monthAvgPath, buffer);
+  strcat(monthAvgPath, "-");
+  sprintf(buffer, "%02d", date.month());
+  strcat(monthAvgPath, buffer);
+  strcat(monthAvgPath, "_monthAvg.JSONL");
+
+  Serial.print("saving month avg values to: ");
+  Serial.println(monthAvgPath);
+
+}
+
 // Changes max readings log path, .../YYYY-MM-DD_max.JSONL
 void changeMaxPath(){
 
-  char buffer[4] = "";    //"YYYY-MM-DD"
+  char buffer[5] = "";    //"YYYY-MM-DD"
   strcpy(maxPath, datePath);
   strcat(maxPath, "/");
   sprintf(buffer, "%d", date.year());
   strcat(maxPath, buffer);
   strcat(maxPath, "-");
-  sprintf(buffer, "%d", date.month());
+  sprintf(buffer, "%02d", date.month());
   strcat(maxPath, buffer);
   strcat(maxPath, "-");
-  sprintf(buffer, "%d", date.day());
+  sprintf(buffer, "%02d", date.day());
   strcat(maxPath, buffer);
   strcat(maxPath, "_max.JSONL");       
 
@@ -809,16 +906,16 @@ void changeMaxPath(){
 // Changes min readings log path, .../YYYY-MM-DD_min.JSONL
 void changeMinPath(){
 
-  char buffer[4] = "";    //"YYYY-MM-DD"
+  char buffer[5] = "";    //"YYYY-MM-DD"
   strcpy(minPath, datePath);
   strcat(minPath, "/");
   sprintf(buffer, "%d", date.year());
   strcat(minPath, buffer);
   strcat(minPath, "-");
-  sprintf(buffer, "%d", date.month());
+  sprintf(buffer, "%02d", date.month());
   strcat(minPath, buffer);
   strcat(minPath, "-");
-  sprintf(buffer, "%d", date.day());
+  sprintf(buffer, "%02d", date.day());
   strcat(minPath, buffer);
   strcat(minPath, "_min.JSONL");       
 
@@ -839,9 +936,91 @@ void splitString(String text, String array[], char del){
   }
 }
 
+// Computes monthly average from SD data
+void monthlyAverage(int year, int month){      // /YYYY/MM/YYYY-MM-    dd_avg.JSONL
+  char path[60] = "";
+  char intBuffer[10] = "";
+  char tempPath[60] = "";
+  strcpy(path, "/");
+  sprintf(intBuffer, "%d", year);
+  strcat(path, intBuffer);
+  strcat(path, "/");
+  sprintf(intBuffer, "%d", month);
+  strcat(path, intBuffer);
+  strcat(path, "/");
+  sprintf(intBuffer, "%d", year);
+  strcat(path, intBuffer);
+  strcat(path, "-");
+  sprintf(intBuffer, "%02d", month);
+  strcat(path, intBuffer);
+  strcat(path, "-");
+
+  for(int i = 0; i < 7; i++){   // Resets variables
+    cReadings[i] = 0;
+    nReadings[i] = 0;
+  }  
+
+  for(int i = 1; i < daysInMonth(year, month) + 1; i++){
+    strcpy(tempPath, path);
+    sprintf(intBuffer, "%02d", i);
+    strcat(tempPath, intBuffer);
+    strcat(tempPath, "_avg.JSONL");
+
+    if(SD.exists(tempPath)){
+      File file = SD.open(tempPath);
+      if(!file){
+        Serial.println("Failed to open file for reading and computing monthly avg...");
+        return;
+      }
+      String line = "init";
+      while(!(line == "")){
+        String group[5];
+        String individual[5][5];
+        line = "";
+        line = readLineSD(file);
+        splitString(line, group, ',');
+        for(int i = 0; i < 3; i++){
+          splitString(group[i],individual[i],':');
+        }
+
+        // Serial.print("Line read: ");
+        // Serial.println(line);
+
+        // Serial.print("Value at group 2: ");
+        // Serial.println(group[1]);
+        
+        // Serial.print("Value at individual 3, 2: ");
+        // Serial.println(individual[2][1]);
+
+        for(int i = 0; i < 6; i++){
+          if(individual[1][1] == *variableName[i + 1]){
+            nReadings[i]++;
+            cReadings[i] += atof(individual[2][1].c_str());
+          }
+        }
+      }
+      file.close();
+    }
+  }
+  for(int i = 0; i < 7; i++){
+    if(nReadings[i] > 0) {
+      *avgReadings[i] = cReadings[i]/nReadings[i];
+      nReadings[i] = 0;
+    } 
+    // else {
+    //   *avgReadings[i] = -1;
+    // }
+  } 
+
+  Serial.print("Monthly averages computed..."); 
+
+
+
+}
+
 // Computes average from SD data
-void dailyAverage(){
-  File file = SD.open(logsPath);
+void dailyAverage(char* path){
+  File file = SD.open(path);
   if(!file){
     Serial.println("Failed to open file for reading and computing avg...");
     return;
@@ -855,8 +1034,8 @@ void dailyAverage(){
   }  
   
   while(!(line == "")){
-    String group[3];
-    String individual[3][2];
+    String group[5];
+    String individual[5][5];
     line = "";
     line = readLineSD(file);
     splitString(line, group, ',');
@@ -864,14 +1043,14 @@ void dailyAverage(){
       splitString(group[i],individual[i],':');
     }
 
-    Serial.print("Line read: ");
-    Serial.println(line);
+    // Serial.print("Line read: ");
+    // Serial.println(line);
 
-    Serial.print("Value at group 2: ");
-    Serial.println(group[1]);
+    // Serial.print("Value at group 2: ");
+    // Serial.println(group[1]);
     
-    Serial.print("Value at individual 3, 2: ");
-    Serial.println(individual[2][1]);
+    // Serial.print("Value at individual 3, 2: ");
+    // Serial.println(individual[2][1]);
 
     for(int i = 0; i < 7; i++){
       if(individual[1][1] == *variableName[i + 1]){
@@ -879,15 +1058,20 @@ void dailyAverage(){
         cReadings[i] += atof(individual[2][1].c_str());
       }
     }
+    //esp_task_wdt_reset();
   }
 
   for(int i = 0; i < 7; i++){
     if(nReadings[i] > 0) {
       *avgReadings[i] = cReadings[i]/nReadings[i];
-    } else {
-      *avgReadings[i] = -1;
-    }
+      nReadings[i] = 0;
+    } 
+    // else {
+    //   *avgReadings[i] = -1;
+    // }
   }  
+  
+
 
   Serial.print("Averages computed..."); 
   file.close();
@@ -900,7 +1084,7 @@ String sensorData(String startTime, String endTime, String variable, String freq
   //Serial.print("Trying to create big buffer...");
   //char bigBuffer[50400] = "";      // feels wrong
   //Serial.println("Done!");
-  char pathBuffer[30] = "";
+  char pathBuffer[40] = "";
   char dBuffer[10] = "";
   Serial.println(strtoul(startTime.c_str(), NULL, 0));
   DateTime selectedDate = DateTime(strtoul(startTime.c_str(), NULL, 0));
@@ -917,34 +1101,91 @@ String sensorData(String startTime, String endTime, String variable, String freq
     strcat(pathBuffer, "/");
     sprintf(dBuffer, "%d", selectedMonth);
     strcat(pathBuffer, dBuffer); 
-    // Read daily avg for selected month
-  }
+    // Read daily avgs for selected month
+  } else {    // "anual"
+    strcat(pathBuffer, "/");
+    sprintf(dBuffer, "%d", selectedYear);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "-");
+    char yearPathBuffer[60] = "";
 
+    strcpy(bigBuffer, "[ ");
+    coma = true;
+    for(int i = 1; i < 13; i++){
+      esp_task_wdt_reset();
+      strcpy(yearPathBuffer, pathBuffer);
+      sprintf(dBuffer, "%02d", i);
+      strcat(yearPathBuffer, dBuffer);
+      strcat(yearPathBuffer, "_monthAvg.JSONL");
+
+      if(SD.exists(yearPathBuffer)){
+        File file = SD.open(yearPathBuffer);
+        if(!file){
+          Serial.println("Failed to open file to send anual data...");
+          //return "";
+        }
+        //strcpy(buffer, "{ \"data\": [");
+
+        while(!(line == "")){
+          String group[5];
+          String individual[5][5];
+          line = "";
+          line = readLineSD(file);
+          splitString(line, group, ',');
+          for(int i = 0; i < 3; i++){
+            splitString(group[i],individual[i],':');
+          }
+
+          if(individual[1][1] == variable){   // Checks for selected variable
+            if(!coma){
+              strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
+              coma = true;
+            }
+            strcat(bigBuffer, line.c_str());
+            coma = false;
+          }
+          //esp_task_wdt_reset();
+        }
+        esp_task_wdt_reset();
+        
+        file.close();
+      }
+      
+    }
+    strcat(bigBuffer, "]");
+    Serial.print("Big buffer anual: ");
+    Serial.println(bigBuffer); 
+  }
+  
+
+  // Fetch all values for a specified date
   if(frequency == "daily"){
     strcat(pathBuffer, "/");
     sprintf(dBuffer, "%d", selectedYear);
     strcat(pathBuffer, dBuffer);
     strcat(pathBuffer, "-");
-    sprintf(dBuffer, "%d", selectedMonth);
+    sprintf(dBuffer, "%02d", selectedMonth);
     strcat(pathBuffer, dBuffer);
     strcat(pathBuffer, "-");
-    sprintf(dBuffer, "%d", selectedDay);
+    sprintf(dBuffer, "%02d", selectedDay);
     strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "_");
+    strcat(pathBuffer, variable.c_str());
     strcat(pathBuffer, ".JSONL");
 
     Serial.println(pathBuffer);
 
     File file = SD.open(pathBuffer);
     if(!file){
-      Serial.println("Failed to open file to send data...");
+      Serial.println("Failed to open file to send daily data...");
       return "";
     }
     //strcpy(buffer, "{ \"data\": [");
     strcpy(bigBuffer, "[ ");
     coma = true;
     while(!(line == "")){
-      String group[3];
-      String individual[3][2];
+      String group[5];
+      String individual[5][5];
       line = "";
       line = readLineSD(file);
       splitString(line, group, ',');
@@ -964,11 +1205,110 @@ String sensorData(String startTime, String endTime, String variable, String freq
     }
     strcat(bigBuffer, "]");  
     file.close();
+
+  } else if (frequency == "monthly"){
+
+    strcat(pathBuffer, "/");
+    sprintf(dBuffer, "%d", selectedYear);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "-");
+    sprintf(dBuffer, "%02d", selectedMonth);
+    strcat(pathBuffer, dBuffer);
+    strcat(pathBuffer, "-");
+    strcpy(bigBuffer, "[ ");
+    coma = true;
+    for(int i = 1; i < daysInMonth(selectedYear, selectedMonth) + 1; i++){
+      line = "init";
+      esp_task_wdt_reset();
+      char monthPathBuffer[60];
+      char dayBuffer[10];
+      strcpy(monthPathBuffer, pathBuffer);
+      sprintf(dayBuffer, "%02d", i);
+      strcat(monthPathBuffer, dayBuffer);
+      strcat(monthPathBuffer, "_avg.JSONL");
+      /////////////////////////////////////////////////////////////////////////////////////
+      Serial.println(monthPathBuffer);
+
+      //if(selectedYear == date.year() && selectedMonth == date.month() && i == date.day() && SD.exists(monthPathBuffer)) deleteFileSD(SD, monthPathBuffer);  // Always compute current day avg
+      
+      // if(!SD.exists(monthPathBuffer)){
+      //   Serial.println("Failed to open file to read average data...");
+      //   // Try to compute avg for selected day of the month, if fails save "" to response String
+      //   //return "";
+              
+      //   for(int j = 0; j < 6; j++){  
+      //     char b[60] = ""; 
+      //     strcpy(b, pathBuffer);
+      //     strcat(b, dayBuffer);
+      //     strcat(b, "_");
+      //     strcat(b, variableName[j+1]->c_str());
+      //     strcat(b, ".JSONL");
+      //     Serial.print("computing file for: ");
+      //     Serial.println(b);
+      //     dailyAverage(b);
+      //   }
+      //   Serial.print("trying to get epoch time... ");
+      //   unsigned long epochTimeTemp = getTimeEpoch(selectedYear, selectedMonth, i);
+      //   Serial.println(epochTimeTemp);
+      //   Serial.println("Trying to write new avg...");
+      //   writeJsonlSDDebug(SD, monthPathBuffer, avgReadings, variableName, 6, epochTimeTemp);
+        
+      // }
+      if(SD.exists(monthPathBuffer)){
+        File file = SD.open(monthPathBuffer);
+        if(!file){
+          Serial.println("Failed to open file to send monthly data...");
+          //return "";
+        }
+        //strcpy(buffer, "{ \"data\": [");
+
+        while(!(line == "")){
+          String group[5];
+          String individual[5][5];
+          line = "";
+          line = readLineSD(file);
+          splitString(line, group, ',');
+          for(int i = 0; i < 3; i++){
+            splitString(group[i],individual[i],':');
+          }
+
+          if(individual[1][1] == variable){   // Checks for selected variable
+            if(!coma){
+              strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
+              coma = true;
+            }
+            strcat(bigBuffer, line.c_str());
+            coma = false;
+          }
+          //esp_task_wdt_reset();
+        }
+        esp_task_wdt_reset();
+        
+        file.close();
+      }
+    }
+    strcat(bigBuffer, "]");  
   }
 
   Serial.print("Data read..."); 
-
+  //esp_task_wdt_reset();
   return bigBuffer;
+}
+
+int daysInMonth(int selectedYear, int selectedMonth){
+  int rtnValue = 0;
+  if(selectedMonth == 2){
+    if(selectedYear % 4 == 0 && (selectedYear % 100 != 0 || selectedYear % 400 == 0)){
+      rtnValue = 29;
+    } else {
+      rtnValue = 28;
+    }
+  } else if(selectedMonth == 4 || selectedMonth == 6 || selectedMonth == 9 || selectedMonth == 11){
+    rtnValue = 30;
+  } else {
+    rtnValue = 31;
+  }
+  return rtnValue;
 }
 
 //testing
@@ -1148,6 +1488,7 @@ void setup() {
 
     server.on("/dates", HTTP_GET, [](AsyncWebServerRequest* request){
       Serial.println("Trying to send dates...");
+      updateTime();
       oldestDate();
       request->send(200, "application/json", oldestDateString());
     });
@@ -1186,6 +1527,7 @@ void setup() {
 
       // Only daily working
       request->send(200, "application/json", sensorData(start, end, sensor, frequency));
+      //esp_task_wdt_reset();
     });
 
 
@@ -1205,8 +1547,15 @@ void setup() {
     configTime(gmtOffset, 0, ntpServer, ntpServer1);
     delay(5000);
     Serial.println("Time tried to be set...");
-    printLocalTime();
-    delay(2000);
+    int timeC = 0;
+    struct tm timeinfoControl;
+    while(!getLocalTime(&timeinfoControl) && timeC < 10){
+      printLocalTime();
+      delay(1000);
+      timeC++;
+      if(timeC == 10) Serial.println("Time sync timed out...");
+    }
+
     getLocalTime(&tmstruct);
     if(isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
     
@@ -1345,6 +1694,7 @@ void setup() {
   changeDatePath();
   changeLogsPath();
   changeAvgPath();
+  changeMonthAvgPath();
   changeMaxPath();
   changeMinPath();
   currentDay = date.day();
@@ -1357,6 +1707,26 @@ void setup() {
   alarmRTC = false;
   rtc.clearAlarm(1);
   Serial.println(alarmRTC);
+
+  // Compute today's average before taking data
+  for(int i = 0; i < 6; i++){
+    char b[60] = "";
+    strcpy(b, datePath);
+    strcat(b, "/");
+    currentDate();
+    strcat(b, currentDateChar);
+    strcat(b, "_");
+    strcat(b, variableName[i+1]->c_str());
+    strcat(b, ".JSONL");
+    dailyAverage(b);
+  }
+  if(SD.exists(avgPath)) deleteFileSD(SD, avgPath);       // File was used to compute this month's values'
+  writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), date.day()));
+
+  monthlyAverage(date.year(), date.month());
+  if(SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+  writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
+  
 }
 
 void loop() {
@@ -1416,6 +1786,8 @@ void loop() {
     // WebSocket sending readings
     sendReadings(currentReadingsString(readings, variableName, 7, epochTime_1));
 
+
+
     // // Checking for max & min, fix pls
     // if(temp > maxTemp) maxTemp = temp;
     // if(temp < minTemp) minTemp = temp;
@@ -1470,9 +1842,33 @@ void loop() {
 
     // Saving readings 
     realTimeC += baseTime;         // Adding +1s
-    if(realTimeC >= sampleTime){
+    if((realTimeC >= sampleTime) && isInitSD){
       writeJsonlSD(SD, logsPath, readings, variableName, 7, epochTime_1);
       realTimeC = 0;
+
+      
+      // Save in indivdual files
+      for(int i = 0; i < 7; i++){
+        char b[60] = "";
+        //char bn[20] = "";
+        strcpy(b, datePath);
+        strcat(b, "/");
+        currentDate();
+        strcat(b, currentDateChar);
+        strcat(b, "_");
+        // Serial.print("i: ");
+        // Serial.println(i);
+        // Serial.print("Variable name array: ");
+        // Serial.println(variableName[i+1]->c_str());
+        strcat(b, variableName[i+1]->c_str());
+        //strcpy(bn, *variableName[i+1]->toCharArray(bn, 20));
+        //*variableName[i+1]->toCharArray(bn, 20);
+        //strcat(b, bn);
+        strcat(b, ".JSONL");
+        Serial.println(b);
+        writeSingleSensorSD(SD, b, *readings[i], *variableName[i+1], epochTime_1);
+      }
+
       // Serial.println("RTC time: ");
       // rtcPrintTime();
       // Serial.println("Local time: ");
@@ -1512,8 +1908,22 @@ void loop() {
     //if((date.hour() == lowerHourLimit || date.hour() == upperHourLimit) && (date.minute() > lowerMinLimit || date.minute() < upperMinLimit)){
     if(date.day() != currentDay){
       // Compute averages first!
-      dailyAverage();
-      writeJsonlSD(SD, avgPath, avgReadings, variableName, 7, epochTime_1);
+      for(int i = 0; i < 6; i++){
+        char b[60] = "";
+        strcpy(b, datePath);
+        strcat(b, "/");
+        currentDate();
+        strcat(b, currentDateChar);
+        strcat(b, "_");
+        strcat(b, variableName[i+1]->c_str());
+        strcat(b, ".JSONL");
+        dailyAverage(b);
+      }
+      if(SD.exists(avgPath)) deleteFileSD(SD, avgPath);       // File was used to compute this month's values'
+      writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, epochTime_1);
+      monthlyAverage(date.year(), date.month());
+      if(SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+      writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
 
       // Save daily max-min
       writeJsonlSD(SD, maxPath, maxReadings, variablesMaxMinName, 6, epochTime_1);
@@ -1524,7 +1934,7 @@ void loop() {
       Serial.println(date.minute());
 
       //reset max-min
-      for(int i = 0; i < 7; i++){
+      for(int i = 0; i < 6; i++){
         *maxReadings[i] = -1;
         *minReadings[i] = 9999;
       }
@@ -1534,6 +1944,7 @@ void loop() {
       changeDatePath();
       changeLogsPath();
       changeAvgPath();
+      changeMonthAvgPath();
       changeMaxPath();
       changeMinPath();
     }

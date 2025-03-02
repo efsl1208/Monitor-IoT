@@ -191,6 +191,73 @@ void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identif
   Serial.println(path);
 }
 
+// SD save readings in JSONL format
+void writeJsonlSDDebug(fs::FS& fs, const char* path, float* values[], String* identifier[], int arrayLength, int timeStamp){
+  Serial.println("Trying to write JSONL...");
+  char buffer[100] = "";
+  char nBuffer[20] = "";
+  File file = fs.open(path, FILE_APPEND);
+  if(!file){
+    Serial.println("Couldn't open file!");
+    return;
+  } 
+
+  for(int i = 0; i < arrayLength; i++){
+    //strcpy(nBuffer, "");
+    strcpy(buffer, "{\"t\":");
+    sprintf(nBuffer, "%lu",timeStamp);
+    strcat(buffer, nBuffer);
+    strcat(buffer, ", \"sensor\":\"");
+    strcpy(nBuffer, identifier[i+1]->c_str());
+    strcat(buffer, nBuffer);
+    strcat(buffer, "\", \"value\":");
+    //strcpy(nBuffer, "");
+    sprintf(nBuffer, "%.2f", *values[i]);
+    strcat(buffer, nBuffer);
+    strcat(buffer, "}\n");
+    
+    file.print(buffer);
+    Serial.print("Text to save: ");
+    Serial.println(buffer);
+  }
+  file.close();
+  Serial.print("File written at: ");
+  Serial.println(path);
+}
+
+
+// SD save single read in JSON
+void writeSingleSensorSD(fs::FS& fs, const char* path, float value, String identifier, int timeStamp){
+  Serial.println("Trying to write single JSONL...");
+  char buffer[100] = "";
+  char nBuffer[20] = "";
+  File file = fs.open(path, FILE_APPEND);
+  if(!file){
+    Serial.println("Couldn't open file!");
+    return;
+  } 
+    //strcpy(nBuffer, "");
+    strcpy(buffer, "{\"t\":");
+    sprintf(nBuffer, "%lu",timeStamp);
+    strcat(buffer, nBuffer);
+    strcat(buffer, ", \"sensor\":\"");
+    strcpy(nBuffer, identifier.c_str());
+    strcat(buffer, nBuffer);
+    strcat(buffer, "\", \"value\":");
+    //strcpy(nBuffer, "");
+    sprintf(nBuffer, "%.2f", value);
+    strcat(buffer, nBuffer);
+    strcat(buffer, "}\n");
+
+    file.print(buffer);
+    // Serial.print("Text to save: ");
+    // Serial.println(buffer);
+  
+  file.close();
+  Serial.print("File written at: ");
+  Serial.println(path);
+}
+
 void renameFileSD(fs::FS &fs, const char *path1, const char *path2) {
   Serial.printf("Renaming file %s to %s\n", path1, path2);
   if (fs.rename(path1, path2)) {
