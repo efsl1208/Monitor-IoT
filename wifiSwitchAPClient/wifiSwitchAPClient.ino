@@ -59,13 +59,15 @@ String upperHourLimitS = "0";       // <= 0     defaults
 String lowerHourLimitS = "23";      // >= 23
 String upperMinLimitS = "5";        // <= 5
 String lowerMinLimitS = "55";       // >= 55
+String gmtString = "-144000";
 
 int upperHourLimit = 0;       // <= 0     defaults
 int lowerHourLimit = 23;      // >= 23
 int upperMinLimit = 5;        // <= 5
 int lowerMinLimit = 55;       // >= 55
 
-String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
+//String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
+String* csvTimeConfig[2] = {&sampleTimeString, &gmtString};
 
 String maxHumidString  = "9999";
 String maxTempString  = "9999";
@@ -89,8 +91,8 @@ const char* credentialsPath = "/config/credentials.conf";
 const char* credentialsPathBackup = "/credentialsBackup.txt";
 const char* logsPathConst = "/logs.txt";
 const char* logsPathBacup = "/logsBackup.txt";
-const char* configPath = "/config.conf";
-const char* alarmConfigPath = "/alarm.conf";
+const char* configPath = "/config/config.conf";
+const char* alarmConfigPath = "/config/alarm.conf";
 char logsPath[60] = "/logs.JSONL";
 char avgPath[60] = "/avg.JSONL";
 char monthAvgPath[60] = "/monthAvg.JSONL";
@@ -585,25 +587,29 @@ void oldestDate(){
   //String oldestD = "";
   char yearPath[10] = "/2025";
   char monthPath[15] = "/2025/1";
-  char dayPath[20] = "/2025/1/1";
+  char dayPath[60] = "/2025/1/1";
   char buffer[10] = "";
   int compYear = date.year();       // Compare values
   int compMonth = 1;
   int compDay = 1;
-
+  int nC = 0;        // Control
   // Checks for current year
   strcpy(yearPath, "/");
   sprintf(buffer, "%d", compYear);
   strcat(yearPath, buffer);
-  while(SD.exists(yearPath)){
-    oldestYear = compYear;
-    compYear += -1;
+  while(SD.exists(yearPath) || nC < 20){
     
+    if(SD.exists(yearPath)){
+      oldestYear = compYear;
+      // Serial.print("found older year: ");
+      // Serial.println(oldestYear);
+    }
+    compYear += -1;
+    nC++;
     strcpy(yearPath, "/");
     sprintf(buffer, "%d", compYear);
     strcat(yearPath, buffer);
-    Serial.print("found older date: ");
-    Serial.println(buffer);
+    
   }
   // Checks for oldest month registered
   strcpy(yearPath, "/");
@@ -613,16 +619,18 @@ void oldestDate(){
   strcat(monthPath, "/");
   sprintf(buffer, "%d", compMonth);
   strcat(monthPath, buffer);
-  while(!SD.exists(monthPath)){
+  nC = 1;
+  while(!SD.exists(monthPath) && nC < 12){
     compMonth += 1;
+    nC++;
     oldestMonth = compMonth;
     strcpy(monthPath, yearPath);
     strcat(monthPath, "/");
     sprintf(buffer, "%d", compMonth);
     strcat(monthPath, buffer);
     
-    Serial.print("found older date: ");
-    Serial.println(buffer);
+    // Serial.print("found older month: ");
+    // Serial.println(buffer);
   }
   //Checks for oldest day registered
   strcpy(monthPath, yearPath);
@@ -633,16 +641,50 @@ void oldestDate(){
   strcat(dayPath, "/");
   sprintf(buffer, "%d", compDay);
   strcat(dayPath, buffer);
-  while(!SD.exists(dayPath)){
-    compDay += 1;
-    oldestDay = compDay;
+  //c = 1;
+  // while(!SD.exists(dayPath) && compDay < 31){
+  //   compDay += 1;
+  //   //c++;
+  //   oldestDay = compDay;
+  //   strcpy(dayPath, monthPath);
+  //   strcat(dayPath, "/");
+  //   sprintf(buffer,"%d", oldestYear);
+  //   strcat(dayPath, buffer);
+  //   strcat(dayPath, "-");
+  //   sprintf(buffer, "%02d", oldestMonth);
+  //   strcat(dayPath, buffer);
+  //   strcat(dayPath, "-");
+  //   sprintf(buffer, "%02d", compDay);
+  //   strcat(dayPath, buffer);
+  //   strcat(dayPath, "_");
+  //   strcat(dayPath, variableName[0]->c_str());
+  //   strcat(dayPath, ".JSONL");
+
+  //   Serial.print("found older day: ");
+  //   Serial.println(buffer);
+  // }
+  for(int i = 0; i < 31; i++){ 
+    
     strcpy(dayPath, monthPath);
     strcat(dayPath, "/");
-    sprintf(buffer, "%d", compDay);
+    sprintf(buffer,"%d", oldestYear);
     strcat(dayPath, buffer);
-    
-    Serial.print("found older date: ");
-    Serial.println(buffer);
+    strcat(dayPath, "-");
+    sprintf(buffer, "%02d", oldestMonth);
+    strcat(dayPath, buffer);
+    strcat(dayPath, "-");
+    sprintf(buffer, "%02d", i + 1);
+    strcat(dayPath, buffer);
+    strcat(dayPath, "_");
+    strcat(dayPath, variableName[0]->c_str());
+    strcat(dayPath, ".JSONL");
+    oldestDay = i + 1;
+    // Serial.print("found older day: ");
+    // Serial.println(i + 1);
+    if(SD.exists(dayPath)){
+      i = 31;
+    }
+
   }
   Serial.print("Oldest date: ");
   Serial.print(oldestYear);
@@ -1440,16 +1482,17 @@ void setup() {
   // Config reading
   if(isInitSD){
     rawTextLine = readFileSD(SD, configPath);
-    if(rawTextLine != "") parse_csv(csvTimeConfig, &rawTextLine, ",", 5);
+    if(rawTextLine != "") parse_csv(csvTimeConfig, &rawTextLine, ",", 2);
     rawTextLine = readFileSD(SD, alarmConfigPath);
     if(rawTextLine != "") parse_csv(csvAlarmConfig, &rawTextLine, ",", 12);
   }
   // String to int
   sampleTime = atoi(sampleTimeString.c_str());
-  upperHourLimit = atoi(upperHourLimitS.c_str());       
-  lowerHourLimit = atoi(lowerHourLimitS.c_str());      
-  upperMinLimit =  atoi(upperMinLimitS.c_str());       
-  lowerMinLimit =  atoi(lowerMinLimitS.c_str());
+  gmtOffset = atoi(gmtString.c_str());
+  // upperHourLimit = atoi(upperHourLimitS.c_str());       
+  // lowerHourLimit = atoi(lowerHourLimitS.c_str());      
+  // upperMinLimit =  atoi(upperMinLimitS.c_str());       
+  // lowerMinLimit =  atoi(lowerMinLimitS.c_str());
   // Alarm String to float   
   for(int i = 0; i < 6; i++){
     *minReadingsLimit[i] = atof(csvAlarmConfig[i]->c_str());
@@ -1490,6 +1533,7 @@ void setup() {
       Serial.println("Trying to send dates...");
       updateTime();
       oldestDate();
+      Serial.println("Oldest date fetch!");
       request->send(200, "application/json", oldestDateString());
     });
 
@@ -1822,18 +1866,21 @@ void loop() {
         startAlarmTime[i] = epochTime_1;
         sensorAlarm = true;
       }
+      //Serial.println("Stopped checking...");
     }
 
     // Checking if value is still is alarm state
     if(sensorAlarm){
       for(int i = 0; i < 6; i++){
+        //Serial.println("Checking alarm low");
         if(activeAlarm[i] && (*readings[i] > *minReadingsLimit[i])){
           endAlarmTime[i] = epochTime_1;
           sensorAlarm = false;
         }
       }
       for(int i = 6; i < 12; i++){
-        if(activeAlarm[i] && (*readings[i] < *maxReadingsLimit[i])){
+        //Serial.println("Checking alarm high");
+        if(activeAlarm[i] && (*readings[i - 6] < *maxReadingsLimit[i - 6])){
           endAlarmTime[i] = epochTime_1;
           sensorAlarm = false;
         }

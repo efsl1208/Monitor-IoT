@@ -1,0 +1,12 @@
+{"t":4294967295, "sensor":"humedad", "value":-1.00}
+{"t":4294967295, "sensor":"temperatura", "value":-1.00}
+{"t":4294967295, "sensor":"solar", "value":-1.00}
+{"t":4294967295, "sensor":"velocidad", "value":-1.00}
+{"t":4294967295, "sensor":"pluviosidad", "value":-1.00}
+{"t":4294967295, "sensor":"presion", "value":-1.00}
+{"t":1742342400, "sensor":"humedad", "value":51.40}
+{"t":1742342400, "sensor":"temperatura", "value":26.73}
+{"t":1742342400, "sensor":"solar", "value":142.05}
+{"t":1742342400, "sensor":"velocidad", "value":0.00}
+{"t":1742342400, "sensor":"pluviosidad", "value":0.00}
+{"t":1742342400, "sensor":"presion", "value":-1.00}

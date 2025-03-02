@@ -1,0 +1,232 @@
+{"t":1738534995, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738534995, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738534995, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738534995, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738534995, "sensor":"Airflow", "value":0.00}
+{"t":1738534995, "sensor":"Wind Direction", "value":0.00}
+{"t":1738534995, "sensor":"Precipitation", "value":0.00}
+{"t":1738534995, "sensor":"Pressure", "value":0.00}
+{"t":1738535010, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535010, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535010, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535010, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535010, "sensor":"Airflow", "value":0.00}
+{"t":1738535010, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535010, "sensor":"Precipitation", "value":0.00}
+{"t":1738535010, "sensor":"Pressure", "value":0.00}
+{"t":1738535026, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535026, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535026, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535026, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535026, "sensor":"Airflow", "value":0.00}
+{"t":1738535026, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535026, "sensor":"Precipitation", "value":0.00}
+{"t":1738535026, "sensor":"Pressure", "value":0.00}
+{"t":1738535041, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535041, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535041, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535041, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535041, "sensor":"Airflow", "value":0.00}
+{"t":1738535041, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535041, "sensor":"Precipitation", "value":0.00}
+{"t":1738535041, "sensor":"Pressure", "value":0.00}
+{"t":1738535056, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535056, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535056, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535056, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535056, "sensor":"Airflow", "value":0.00}
+{"t":1738535056, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535056, "sensor":"Precipitation", "value":0.00}
+{"t":1738535056, "sensor":"Pressure", "value":0.00}
+{"t":1738535071, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535071, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535071, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535071, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535071, "sensor":"Airflow", "value":0.00}
+{"t":1738535071, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535071, "sensor":"Precipitation", "value":0.00}
+{"t":1738535071, "sensor":"Pressure", "value":0.00}
+{"t":1738535086, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535086, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535086, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535086, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535086, "sensor":"Airflow", "value":0.00}
+{"t":1738535086, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535086, "sensor":"Precipitation", "value":0.00}
+{"t":1738535086, "sensor":"Pressure", "value":0.00}
+{"t":1738535102, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535102, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535102, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535102, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535102, "sensor":"Airflow", "value":0.00}
+{"t":1738535102, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535102, "sensor":"Precipitation", "value":0.00}
+{"t":1738535102, "sensor":"Pressure", "value":0.00}
+{"t":1738535117, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535117, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535117, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535117, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535117, "sensor":"Airflow", "value":0.00}
+{"t":1738535117, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535117, "sensor":"Precipitation", "value":0.00}
+{"t":1738535117, "sensor":"Pressure", "value":0.00}
+{"t":1738535132, "sensor":"TemperatureDHT", "value":0.00}
+{"t":1738535132, "sensor":"HumidityDHT", "value":0.00}
+{"t":1738535132, "sensor":"TemperatureDSB", "value":0.00}
+{"t":1738535132, "sensor":"Solar Irradiance", "value":0.00}
+{"t":1738535132, "sensor":"Airflow", "value":0.00}
+{"t":1738535132, "sensor":"Wind Direction", "value":0.00}
+{"t":1738535132, "sensor":"Precipitation", "value":0.00}
+{"t":1738535132, "sensor":"Pressure", "value":0.00}
+{"t":1738535186, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535186, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535186, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535186, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535186, "sensor":"Airflow", "value":0.00}
+{"t":1738535186, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535186, "sensor":"Precipitation", "value":0.00}
+{"t":1738535186, "sensor":"Pressure", "value":-1.00}
+{"t":1738535202, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535202, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535202, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535202, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535202, "sensor":"Airflow", "value":0.00}
+{"t":1738535202, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535202, "sensor":"Precipitation", "value":0.00}
+{"t":1738535202, "sensor":"Pressure", "value":-1.00}
+{"t":1738535217, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535217, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535217, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535217, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535217, "sensor":"Airflow", "value":0.00}
+{"t":1738535217, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535217, "sensor":"Precipitation", "value":0.00}
+{"t":1738535217, "sensor":"Pressure", "value":-1.00}
+{"t":1738535232, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535232, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535232, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535232, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535232, "sensor":"Airflow", "value":0.00}
+{"t":1738535232, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535232, "sensor":"Precipitation", "value":0.00}
+{"t":1738535232, "sensor":"Pressure", "value":-1.00}
+{"t":1738535247, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535247, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535247, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535247, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535247, "sensor":"Airflow", "value":0.00}
+{"t":1738535247, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535247, "sensor":"Precipitation", "value":0.00}
+{"t":1738535247, "sensor":"Pressure", "value":-1.00}
+{"t":1738535262, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535262, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535262, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535262, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535262, "sensor":"Airflow", "value":0.00}
+{"t":1738535262, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535262, "sensor":"Precipitation", "value":0.00}
+{"t":1738535262, "sensor":"Pressure", "value":-1.00}
+{"t":1738535278, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535278, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535278, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535278, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535278, "sensor":"Airflow", "value":0.00}
+{"t":1738535278, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535278, "sensor":"Precipitation", "value":0.00}
+{"t":1738535278, "sensor":"Pressure", "value":-1.00}
+{"t":1738535293, "sensor":"TemperatureDHT", "value":29.50}
+{"t":1738535293, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535293, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535293, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535293, "sensor":"Airflow", "value":0.00}
+{"t":1738535293, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535293, "sensor":"Precipitation", "value":0.00}
+{"t":1738535293, "sensor":"Pressure", "value":-1.00}
+{"t":1738535308, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535308, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535308, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535308, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535308, "sensor":"Airflow", "value":0.00}
+{"t":1738535308, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535308, "sensor":"Precipitation", "value":0.00}
+{"t":1738535308, "sensor":"Pressure", "value":-1.00}
+{"t":1738535323, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535323, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535323, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535323, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535323, "sensor":"Airflow", "value":0.00}
+{"t":1738535323, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535323, "sensor":"Precipitation", "value":0.00}
+{"t":1738535323, "sensor":"Pressure", "value":-1.00}
+{"t":1738535339, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535339, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535339, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535339, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535339, "sensor":"Airflow", "value":0.00}
+{"t":1738535339, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535339, "sensor":"Precipitation", "value":0.00}
+{"t":1738535339, "sensor":"Pressure", "value":-1.00}
+{"t":1738535354, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535354, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535354, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535354, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535354, "sensor":"Airflow", "value":0.00}
+{"t":1738535354, "sensor":"Wind Direction", "value":4.00}
+{"t":1738535354, "sensor":"Precipitation", "value":0.00}
+{"t":1738535354, "sensor":"Pressure", "value":-1.00}
+{"t":1738535403, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535403, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535403, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535403, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535403, "sensor":"Airflow", "value":0.00}
+{"t":1738535403, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738535403, "sensor":"Precipitation", "value":0.00}
+{"t":1738535403, "sensor":"Pressure", "value":-1.00}
+{"t":1738535418, "sensor":"TemperatureDHT", "value":29.60}
+{"t":1738535418, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738535418, "sensor":"TemperatureDSB", "value":29.31}
+{"t":1738535418, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738535418, "sensor":"Airflow", "value":0.00}
+{"t":1738535418, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738535418, "sensor":"Precipitation", "value":0.00}
+{"t":1738535418, "sensor":"Pressure", "value":-1.00}
+{"t":1738536372, "sensor":"TemperatureDHT", "value":29.40}
+{"t":1738536372, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738536372, "sensor":"TemperatureDSB", "value":29.19}
+{"t":1738536372, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738536372, "sensor":"Airflow", "value":5.00}
+{"t":1738536372, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738536372, "sensor":"Precipitation", "value":0.00}
+{"t":1738536372, "sensor":"Pressure", "value":-1.00}
+{"t":1738536387, "sensor":"TemperatureDHT", "value":29.40}
+{"t":1738536387, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738536387, "sensor":"TemperatureDSB", "value":29.12}
+{"t":1738536387, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738536387, "sensor":"Airflow", "value":0.00}
+{"t":1738536387, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738536387, "sensor":"Precipitation", "value":0.00}
+{"t":1738536387, "sensor":"Pressure", "value":-1.00}
+{"t":1738536402, "sensor":"TemperatureDHT", "value":29.40}
+{"t":1738536402, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738536402, "sensor":"TemperatureDSB", "value":29.12}
+{"t":1738536402, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738536402, "sensor":"Airflow", "value":0.00}
+{"t":1738536402, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738536402, "sensor":"Precipitation", "value":0.00}
+{"t":1738536402, "sensor":"Pressure", "value":-1.00}
+{"t":1738536417, "sensor":"TemperatureDHT", "value":29.40}
+{"t":1738536417, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738536417, "sensor":"TemperatureDSB", "value":29.12}
+{"t":1738536417, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738536417, "sensor":"Airflow", "value":0.00}
+{"t":1738536417, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738536417, "sensor":"Precipitation", "value":0.00}
+{"t":1738536417, "sensor":"Pressure", "value":-1.00}
+{"t":1738536433, "sensor":"TemperatureDHT", "value":29.40}
+{"t":1738536433, "sensor":"HumidityDHT", "value":45.00}
+{"t":1738536433, "sensor":"TemperatureDSB", "value":29.12}
+{"t":1738536433, "sensor":"Solar Irradiance", "value":142.00}
+{"t":1738536433, "sensor":"Airflow", "value":0.00}
+{"t":1738536433, "sensor":"Wind Direction", "value":-1.00}
+{"t":1738536433, "sensor":"Precipitation", "value":0.00}
+{"t":1738536433, "sensor":"Pressure", "value":-1.00}
