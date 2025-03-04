@@ -92,6 +92,22 @@ String readLineSD(File file){
   return "";
 }
 
+String readMultipleLinesSD(fs::FS &fs, const char *path) {
+  char fileContent[512] = "";
+  String line = "init";
+  File file = fs.open(path);
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    return "";
+  }
+  while(line != ""){
+    line = readLineSD(file);
+    if(line != "") strcat(fileContent, line.c_str());
+  }
+  file.close();
+  return fileContent;
+}
+
 void writeFileSD(fs::FS &fs, const char *path, const char *message) {
   Serial.printf("Writing file: %s\n", path);
 
@@ -170,17 +186,17 @@ void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identif
 
   for(int i = 0; i < arrayLength; i++){
     //strcpy(nBuffer, "");
-    strcpy(buffer, "{\"t\":");
+    strcpy(buffer, "{\"t\": \"");
     sprintf(nBuffer, "%lu",timeStamp);
     strcat(buffer, nBuffer);
-    strcat(buffer, ", \"sensor\":\"");
+    strcat(buffer, "\", \"variable\":\"");
     strcpy(nBuffer, identifier[i+1]->c_str());
     strcat(buffer, nBuffer);
-    strcat(buffer, "\", \"value\":");
+    strcat(buffer, "\", \"valor\": \"");
     //strcpy(nBuffer, "");
     sprintf(nBuffer, "%.2f", *values[i]);
     strcat(buffer, nBuffer);
-    strcat(buffer, "}\n");
+    strcat(buffer, "\"}\n");
 
     file.print(buffer);
     // Serial.print("Text to save: ");
@@ -204,17 +220,17 @@ void writeJsonlSDDebug(fs::FS& fs, const char* path, float* values[], String* id
 
   for(int i = 0; i < arrayLength; i++){
     //strcpy(nBuffer, "");
-    strcpy(buffer, "{\"t\":");
+    strcpy(buffer, "{\"t\": \"");
     sprintf(nBuffer, "%lu",timeStamp);
     strcat(buffer, nBuffer);
-    strcat(buffer, ", \"sensor\":\"");
+    strcat(buffer, "\", \"variable\":\"");
     strcpy(nBuffer, identifier[i+1]->c_str());
     strcat(buffer, nBuffer);
-    strcat(buffer, "\", \"value\":");
+    strcat(buffer, "\", \"valor\": \"");
     //strcpy(nBuffer, "");
     sprintf(nBuffer, "%.2f", *values[i]);
     strcat(buffer, nBuffer);
-    strcat(buffer, "}\n");
+    strcat(buffer, "\"}\n");
     
     file.print(buffer);
     Serial.print("Text to save: ");
@@ -237,17 +253,17 @@ void writeSingleSensorSD(fs::FS& fs, const char* path, float value, String ident
     return;
   } 
     //strcpy(nBuffer, "");
-    strcpy(buffer, "{\"t\":");
+    strcpy(buffer, "{\"t\": \"");
     sprintf(nBuffer, "%lu",timeStamp);
     strcat(buffer, nBuffer);
-    strcat(buffer, ", \"sensor\":\"");
+    strcat(buffer, "\", \"variable\":\"");
     strcpy(nBuffer, identifier.c_str());
     strcat(buffer, nBuffer);
-    strcat(buffer, "\", \"value\":");
+    strcat(buffer, "\", \"valor\": \"");
     //strcpy(nBuffer, "");
     sprintf(nBuffer, "%.2f", value);
     strcat(buffer, nBuffer);
-    strcat(buffer, "}\n");
+    strcat(buffer, "\"}\n");
 
     file.print(buffer);
     // Serial.print("Text to save: ");

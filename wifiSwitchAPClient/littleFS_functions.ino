@@ -26,6 +26,31 @@ String readFileFS(fs::FS& fs, const char* path) {
   return fileContent;
 }
 
+// Assumes file is open
+String readLineFS(File file){
+  while(file.available()){
+    return file.readStringUntil('\n');
+  }
+  return "";
+}
+
+String readMultipleLinesFS(fs::FS &fs, const char *path) {
+  char fileContent[512] = "";
+  String line = "init";
+  File file = fs.open(path);
+  if (!file) {
+    Serial.println("Failed to open file for reading");
+    return "";
+  }
+  while(line != ""){
+    line = readLineFS(file);
+    if(line != "") strcat(fileContent, line.c_str());
+  }
+  file.close();
+  return fileContent;
+}
+
+
 // Write file to LittleFS
 void writeFileFS(fs::FS& fs, const char* path, const char* message) {
   Serial.printf("Writing file: %s\r\n", path);

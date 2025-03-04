@@ -54,6 +54,6 @@ void rtcAdjust(DateTime dateNew){
   Serial.println(now.second(), DEC);
 }
 
-unsigned long getEpochRTC(){
-  return rtc.now().unixtime();
+unsigned long getEpochRTC(int offset){
+  return rtc.now().unixtime() - offset;
 }
