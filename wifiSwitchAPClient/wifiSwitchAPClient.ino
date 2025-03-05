@@ -163,9 +163,9 @@ String postRequestName[12] = {""};
 String postRequestValue[12] = {""};
 
 // Encrypt vars
-char tempMessage[512] = "";
-char encryptedMessage[512] = "";
-char eKey[32] = "universidadDeCarabobo";
+char tempMessage[64] = "";
+char encryptedMessage[64] = "";
+char eKey[16] = {0x45, 0x73, 0x74, 0x61, 0x63, 0x69, 0x6F, 0x6E, 0x4D, 0x65, 0x74, 0x65, 0x6F, 0x49, 0x6F, 0x54};//"EstacionMeteoIoT";
 char eIv[16] = "";
 char eIvNetwork[16] = "";
 char eIvAuth[16] = ""; 
@@ -381,6 +381,7 @@ extern String readFileFS();
 extern String readMultipleLinesFS();
 extern String readLineFS();
 extern void writeFileFS();
+extern void writeCharArrayFS();
 extern void deleteFileFS();
 extern void listDirFS();
 // SD
@@ -390,6 +391,7 @@ extern String readFileSD();
 extern String readLineSD();
 extern String readMultipleLinesSD();
 extern void writeFileSD();
+extern void writeCharArraySD();
 extern void appendFileSD();
 extern void appendFileDebugSD();
 extern void appendCSVFileSD();
@@ -735,7 +737,7 @@ void handleWSMessage(void *arg, uint8_t *data, size_t len) {
     String message = (char*)data;
     // Check message
     if (strcmp((char*)data, "test message") == 0) {
-      Serial.println("test message from ws recieved...");
+      Serial.println("test message from ws received...");
     }
   }
 }
@@ -1670,14 +1672,22 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
       //LittleFS write
       // writeFileFS(LittleFS, authConfigPath, admin_pass.c_str());
       //SD write
-      //if(isInitSD) writeFileSD(SD, authConfigPath, admin_pass.c_str());
-      String encryptedAdminPass = encryptAES((unsigned const char*)eKey, admin_pass.c_str());
+      //if(isInitSD) writeFileSD(SD, authConfigPath, admin_pass.c_str()); 
+      char buff[64];
+      //String encryptedAdminPass = 
+      encryptAES((unsigned const char*)eKey, admin_pass.c_str(), buff);
+     
+      // for (int j = 0; j < 64; j++) {
+      //   buff[j] = encryptedAdminPass.c_str()[j];
+      // }
       // LittleFS
       // writeFileFS(LittleFS, authConfigPath, encryptAES((unsigned const char*)eKey, admin_pass).c_str()); 
       // writeFileFS(LittleFS, ivPathAuth, eIv);
       if (isInitSD) {
-        writeFileSD(SD, authConfigPath, encryptedAdminPass.c_str()); 
-        writeFileSD(SD, ivPathAuth, eIv);
+        Serial.print("Encrypted message buffer: ");
+        Serial.println(buff);
+        writeCharArraySD(SD, authConfigPath, buff, 64); 
+        writeCharArraySD(SD, ivPathAuth, eIv, 16);
       }
 
       break;
@@ -1712,7 +1722,20 @@ int daysInMonth(int selectedYear, int selectedMonth) {
 
 // Checks sent admin password 
 bool adminPasswordOK(String tryPass) {
-  return admin_pass == encryptAES((unsigned const char*)eKey, eIvAuth, tryPass.c_str());
+  char encryptedPass[64];
+  //String encryptedPass = "";
+  Serial.println("Trying to encrypt response...");
+  //encryptedPass = encryptAES((unsigned const char*)eKey, eIvAuth, tryPass.c_str());
+  encryptAES((unsigned const char*)eKey, eIvAuth, tryPass.c_str(), encryptedPass);
+  Serial.print("Encrypted saved password: ");
+  Serial.println(admin_pass);
+  Serial.print("Encrypted response: ");
+  Serial.println(encryptedPass);
+  Serial.print("Decrypted response: ");
+  Serial.println(decryptAES((unsigned const char *)eKey, eIvAuth, (const char*)encryptedPass));
+  Serial.print("Decrypted saved pass: ");
+  Serial.println(decryptAES((unsigned const char *)eKey, eIvAuth, admin_pass.c_str()));
+  return decryptAES((unsigned const char *)eKey, eIvAuth, admin_pass.c_str()) == tryPass;
 }
 
 // Tokens
@@ -1771,9 +1794,9 @@ void removeToken(String tokenValueS) {
 
 String tokenJsonString(String token) {
   char rtn[50] = "";
-  strcpy(rtn, "{\"token\": ");
+  strcpy(rtn, "{\"token\": \"");
   strcat(rtn, token.c_str());
-  strcat(rtn, "}");
+  strcat(rtn, "\"}");
   return rtn;
 }
 
@@ -1840,9 +1863,12 @@ void IRAM_ATTR rtcISR() {
 // Encrypt
 // Saves encrypted message in output char[]
 void encryptAES(const unsigned char* key, const char* message, char* output) {
-  strcpy(tempMessage, message);
+  // strcpy(tempMessage, message);
+  for (int i = 0; i < 64; i++) {
+    tempMessage[i] = message[i];
+  }
   //memset(message, 0, sizeof(message));
-  char iv[16] = "testing12345678";
+  char iv[16];
   //int temp = esp_random();
   esp_fill_random(&iv, 16);
   // mbedtls_ctr_drbg_context ctr_drbg;
@@ -1853,12 +1879,53 @@ void encryptAES(const unsigned char* key, const char* message, char* output) {
   Serial.print("Random iv generated: ");
   Serial.println(iv);
   // Saving generated iv in memory
-  strcpy(eIv, iv);
+  // strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
+  Serial.println(eIv);
   esp_aes_context ctx;
   esp_aes_init(&ctx);
   esp_aes_setkey(&ctx, key, 128);
-  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, sizeof(tempMessage), (unsigned char*)iv, (uint8_t*)tempMessage, (uint8_t*)output);
-  memset(tempMessage, 0, sizeof(tempMessage));
+  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, 64, (unsigned char*)iv, (uint8_t*)tempMessage, (uint8_t*)output);
+  memset(tempMessage, 0, 64);
+  esp_aes_free(&ctx);
+
+  Serial.print("Message encrypted...");
+  Serial.println(output);
+}
+
+// Saves encrypted message in output char[]
+void encryptAES(const unsigned char* key, const char* iv, const char* message, char* output) {
+  // strcpy(tempMessage, message);
+  memset(tempMessage, 0, 64);
+  for (int i = 0; i < 64; i++) {
+    tempMessage[i] = message[i];
+  }
+  Serial.print("TempMessage: ");
+  Serial.println(tempMessage);
+  //memset(message, 0, sizeof(message));
+  //char iv[16];
+  //int temp = esp_random();
+  //esp_fill_random(&iv, 16);
+  // mbedtls_ctr_drbg_context ctr_drbg;
+  // mbedtls_ctr_drbg_init(&ctr_drbg);
+  // temp = mbedtls_ctr_drbg_random(&ctr_drbg, (unsigned char*)iv, sizeof(iv));
+  // mbedtls_ctr_drbg_free(&ctr_drbg);
+
+  Serial.print("Received IV, saved in eIv: ");
+  //Serial.println(iv);
+  // Saving generated iv in memory
+  // strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
+  Serial.println(eIv);
+  esp_aes_context ctx;
+  esp_aes_init(&ctx);
+  esp_aes_setkey(&ctx, key, 128);
+  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, 64, (unsigned char*)eIv, (uint8_t*)tempMessage, (uint8_t*)output);
+  memset(tempMessage, 0, 64);
   esp_aes_free(&ctx);
 
   Serial.print("Message encrypted...");
@@ -1867,10 +1934,13 @@ void encryptAES(const unsigned char* key, const char* message, char* output) {
 
 // Returns String for encrypted message 
 String encryptAES(const unsigned char* key, const char* message) {
-  strcpy(tempMessage, message);
+  // strcpy(tempMessage, message);
+  for (int i = 0; i < 64; i++) {
+    tempMessage[i] = message[i];
+  }
   //memset(message, 0, sizeof(message));
-  char iv[16] = "testing12345678";
-  char output[512] = "";
+  char iv[16];
+  char output[64] = "";
   //int temp = esp_random();
   esp_fill_random(&iv, 16);
   // mbedtls_ctr_drbg_context ctr_drbg;
@@ -1881,12 +1951,16 @@ String encryptAES(const unsigned char* key, const char* message) {
   Serial.print("Random iv generated: ");
   Serial.println(iv);
   // Saving generated iv in memory
-  strcpy(eIv, iv);
+  // strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
+  Serial.println(eIv);
   esp_aes_context ctx;
   esp_aes_init(&ctx);
   esp_aes_setkey(&ctx, key, 128);
-  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, sizeof(tempMessage), (unsigned char*)iv, (uint8_t*)tempMessage, (uint8_t*)output);
-  memset(tempMessage, 0, sizeof(tempMessage));
+  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, 64, (unsigned char*)eIv, (uint8_t*)tempMessage, (uint8_t*)output);
+  memset(tempMessage, 0, 64);
   esp_aes_free(&ctx);
 
   Serial.print("Message encrypted...");
@@ -1896,16 +1970,33 @@ String encryptAES(const unsigned char* key, const char* message) {
 
 // Returns encrypt with given iv
 String encryptAES(const unsigned char* key, char* iv, const char* message) {
-  strcpy(tempMessage, message);
-  //char iv[16] = "";
-  char output[512] = "";
-  strcpy(eIv, iv);
+  // Serial.println("Trying to copy message...");
+  memset(tempMessage, 0, 64);
+  // strcpy(tempMessage, message);
+  for (int i = 0; i < 64; i++) {
+    tempMessage[i] = message[i];
+  }
+  Serial.print("Message copied...");
+  Serial.println(tempMessage);
+  //char copyIv[16] = "";
+  char output[64] = "";
+  // Serial.println("Trying to copy IV...");
+  memset(eIv, 0, sizeof(eIv));
+  // strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
+  Serial.print("IV copied...");
+  Serial.println(eIv);
+
   esp_aes_context ctx;
   esp_aes_init(&ctx);
   esp_aes_setkey(&ctx, key, 128);
-  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, sizeof(tempMessage), (unsigned char*)iv, (uint8_t*)tempMessage, (uint8_t*)output);
-  memset(tempMessage, 0, sizeof(tempMessage));
+  esp_aes_crypt_cbc(&ctx, ESP_AES_ENCRYPT, 64, (unsigned char*)eIv, (uint8_t*)tempMessage, (uint8_t*)output);
+  memset(tempMessage, 0, 64);
   esp_aes_free(&ctx);
+
+  Serial.println("Message encrypted...");
   return output;
 }
 
@@ -1913,9 +2004,12 @@ String encryptAES(const unsigned char* key, char* iv, const char* message) {
 void decryptAES(const unsigned char* key, char* iv, const char* encrypted, char* output) {
   strcpy(encryptedMessage, (const char*)encrypted);
   //memset(encrypted, 0, enc)
-  Serial.print("Recieved IV: ");
+  Serial.print("received IV: ");
   Serial.println(iv);
-  strcpy(eIv, iv);
+  //strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
   esp_aes_context ctx;
   esp_aes_init(&ctx);
   esp_aes_setkey(&ctx, key, 128);
@@ -1930,11 +2024,14 @@ void decryptAES(const unsigned char* key, char* iv, const char* encrypted, char*
 // Returns String
 String decryptAES(const unsigned char* key, char* iv, const char* encrypted) {
   strcpy(encryptedMessage, (const char*)encrypted);
-  char output[512] = "";
+  char output[64] = "";
   //memset(encrypted, 0, enc)
-  Serial.print("Recieved IV: ");
+  Serial.print("received IV: ");
   Serial.println(iv);
-  strcpy(eIv, iv);
+  // strcpy(eIv, iv);
+  for (int i = 0; i < 16; i++) {
+    eIv[i] = iv[i];
+  }
   Serial.println("iv copied to eIv");
   esp_aes_context ctx;
   esp_aes_init(&ctx);
@@ -1948,7 +2045,7 @@ String decryptAES(const unsigned char* key, char* iv, const char* encrypted) {
   return output;
 }
 
-////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
   // Serial port for debugging purposes
@@ -2084,7 +2181,12 @@ void setup() {
   Serial.print("Decripted admin pass: ");
   Serial.println(admin_pass);
   Serial.println(decryptAES((unsigned const char*)eKey, eIvAuth, admin_pass.c_str()));
-
+  String tempPass = decryptAES((unsigned const char*)eKey, eIvAuth, admin_pass.c_str());
+  char tempPassBuffer[64];
+  encryptAES((unsigned const char*)eKey, eIvAuth, tempPass.c_str(), tempPassBuffer);
+  admin_pass = tempPassBuffer;
+  Serial.print("admin_pass re-encrypted to: ");
+  Serial.println(admin_pass);
 
   ////////////////////////////////////////////////////////////////////////////////////////////
   if (mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
@@ -2215,7 +2317,7 @@ void setup() {
       //should_restart = true;
     });
     
-    server.on("/autenticar", HTTP_GET, [](AsyncWebServerRequest* request) {   ///Change to POST////////////////////////////////////////////////////////////////////////////////////////
+    server.on("/autenticar", HTTP_POST, [](AsyncWebServerRequest* request) {   ///Change to POST////////////////////////////////////////////////////////////////////////////////////////
       Serial.println("POST request received");
       int params = request->params();
       String tryPass = "";
@@ -2225,27 +2327,29 @@ void setup() {
         if (p->isPost()) {
           if (p->name() == PARAM_INPUT_5) {
             tryPass = p->value().c_str();
-            Serial.print("Recieved pass is: ");
+            Serial.print("received pass is: ");
             Serial.println(tryPass);
           }
         }
       }
-      // if (adminPasswordOK(tryPass)) { ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-      if (true) {     //Testing
+      if (adminPasswordOK(tryPass)) { ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      // if (true) {     //Testing
         tokenIndex = activateToken();
         if(tokenIndex > -1) {
           Serial.println("Token activated: ");
           Serial.print(tokenValue[tokenIndex]);
           //request->send(200, "application/json", tokenValue[tokenIndex]);
           AsyncWebServerResponse *response = request->beginResponse(200, "application/json", tokenJsonString(tokenValue[tokenIndex]));
-          char buffer[50] = "Bearer ";
-          strcat(buffer, tokenValue[tokenIndex].c_str());
-          response->addHeader("Authorization", buffer);
+          // char buffer[50] = "Bearer ";
+          // strcat(buffer, tokenValue[tokenIndex].c_str());
+          //response->addHeader("Authorization", buffer);
 	        request->send(response);
 
         } else {
-          request->send(400, "text/plain", "No tokens available");
+          request->send(400, "text/plain", "No tokens available.");
         }
+      } else {
+        request->send(401, "text/plain", "Wrong password.");
       }
       //request->send(400, "text/plain", "Wrong password / invalid format");
 
@@ -2390,12 +2494,20 @@ void setup() {
           // writeFileSD(SD, ivPathNetwork, eIv);
         }
         // Admin pass save
-        String encryptedAdminPass = encryptAES((unsigned const char*)eKey, admin_pass.c_str());
-        writeFileFS(LittleFS, authConfigPath, encryptedAdminPass.c_str()); 
-        writeFileFS(LittleFS, ivPathAuth, eIv);
+        char buff[64];
+        //String encryptedAdminPass = 
+        encryptAES((unsigned const char*)eKey, admin_pass.c_str(), buff);
+        
+        // for (int j = 0; j < 64; j++) {
+        // buff[j] = encryptedAdminPass.c_str()[j];
+        // }
+
+        //writeFileFS(LittleFS, authConfigPath, encryptedAdminPass.c_str()); 
+        writeCharArrayFS(LittleFS, authConfigPath, buff, 64);
+        writeCharArrayFS(LittleFS, ivPathAuth, eIv, 16);
         if (isInitSD) {
-          writeFileSD(SD, authConfigPath, encryptedAdminPass.c_str()); 
-          writeFileSD(SD, ivPathAuth, eIv);
+          writeCharArraySD(SD, authConfigPath, buff, 64); 
+          writeCharArraySD(SD, ivPathAuth, eIv, 16);
         }
       }
       request->send(200, "text/plain", "Done. Restarting with new settings.");

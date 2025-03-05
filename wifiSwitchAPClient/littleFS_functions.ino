@@ -67,6 +67,24 @@ void writeFileFS(fs::FS& fs, const char* path, const char* message) {
   }
 }
 
+void writeCharArrayFS(fs::FS &fs, const char *path, char *message, int length) {
+  Serial.printf("Writing file: %s\n", path);
+
+  File file = fs.open(path, FILE_WRITE);
+  if (!file) {
+    Serial.println("Failed to open file for writing");
+    return;
+  }
+  for (int i = 0; i < length; i++) {
+    if(file.print(message[i])) {
+      Serial.println("Char written");
+    } else {
+      Serial.println("Char failed");
+    }
+  } 
+  file.close();
+}
+
 // Delete file LittleFS
 void deleteFileFS(fs::FS& fs, const char* path) {
   Serial.printf("Deleting file: %s\r\n", path);

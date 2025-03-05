@@ -124,6 +124,24 @@ void writeFileSD(fs::FS &fs, const char *path, const char *message) {
   file.close();
 }
 
+void writeCharArraySD(fs::FS &fs, const char *path, char *message, int length) {
+  Serial.printf("Writing file: %s\n", path);
+
+  File file = fs.open(path, FILE_WRITE);
+  if (!file) {
+    Serial.println("Failed to open file for writing");
+    return;
+  }
+  for (int i = 0; i < length; i++) {
+    if(file.print(message[i])) {
+      Serial.println("Char written");
+    } else {
+      Serial.println("Char failed");
+    }
+  } 
+  file.close();
+}
+
 void appendFileSD(fs::FS &fs, const char *path, const char *message) {
   //Serial.printf("Appending to file: %s\n", path);
 
