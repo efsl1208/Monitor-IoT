@@ -6,6 +6,9 @@
 #include "SD.h"
 #include "SPI.h"
 #include "DHT.h"
+#include <Wire.h>
+#include <Adafruit_Sensor.h>
+#include <Adafruit_BMP280.h>
 #include "time.h"
 #include <RTClib.h>
 #include <sys/time.h>
@@ -23,10 +26,10 @@
 /     13: Airflow
 /     14: Precipitation
 /     17: Temp DS18B20
-/     18: CLK
+/     18: CLK/SCK
 /     19: MISO
-/     21: RTC
-/     22: RTC
+/     21: I2C/SDA
+/     22: I2C/SCL
 /     23: MOSI
 /     34: ADC (Solar Irr)
 */
@@ -228,8 +231,12 @@ int pastDay = 1;
 #define DHTPIN 4
 #define DHTTYPE DHT11
 DHT dht (DHTPIN, DHTTYPE);
-// DHT variables, should delete?
-float dhtVar[2] = {0.0};
+// // DHT variables, should delete?
+// float dhtVar[2] = {0.0};
+
+// BME280
+bool isBMP = false;
+Adafruit_BMP280 bmp;    // 0x76 address
 
 // DS18B20
 #define DSBPIN 17
@@ -403,8 +410,8 @@ extern void deleteFileSD();
 extern float readSolarIrr();
 extern void saveSolarIrr();
 // DHT
-extern float readTemp();
-extern float readHumid();
+extern float readTempDHT();
+extern float readHumidDHT();
 extern void saveTemp();
 extern void saveHumid();
 // DS18B200
@@ -421,6 +428,11 @@ extern void saveWindDir();
 // Rain gauge
 extern float readPrecip();
 extern void savePrecip();
+// BME280
+extern float readPressure();
+extern void settingsBMP();
+
+
 
 // AsyncWebServer object on port 80
 AsyncWebServer server(80);
@@ -1767,13 +1779,20 @@ int activateToken() {
 bool isTokenValid(String tokenValueS) {
   updateTime();
   for (int i = 0; i < 5; i++) {
+    // Serial.print("Current token check: ");
+    // Serial.println(tokenValue[i]);
     if (tokenValue[i] == tokenValueS) {
-      if(tokenExpire[i] > getTimeEpoch(0)){
+      // Serial.print("Token exp time: ");
+      // Serial.println(tokenExpire[i]);
+      // Serial.println(getTimeEpoch(0));
+      if(tokenExpire[i] < getTimeEpoch(0)){
         tokenValue[i] = "";
         tokenExpire[i] = 0;
         tokenActive[i] = false;
+        // Serial.println("Token exp value was higher than current time...");
         return false;
       }
+      // Serial.println("Returning true...");
       return true;
     }
   }
@@ -2058,6 +2077,14 @@ void setup() {
   // Inits
   initSD(&isInitSD);
   dht.begin();
+ 
+  if(!bmp.begin(0x76)) { 
+    isBMP = false;
+    Serial.println("BME init failed...");
+  } else {
+    isBMP = true;
+    settingsBMP(&bmp);
+  }
   initLittleFS();
   rtcInit(&isRTC);
   //tempDSB = initDSBTemp(oneWire);
@@ -2177,14 +2204,19 @@ void setup() {
   precipRatio = atof (precipRatioString.c_str());
   airflowRatio = atof (airflowRatioString.c_str());
 
-
+  // AES Testing
   Serial.print("Decripted admin pass: ");
   Serial.println(admin_pass);
   Serial.println(decryptAES((unsigned const char*)eKey, eIvAuth, admin_pass.c_str()));
   String tempPass = decryptAES((unsigned const char*)eKey, eIvAuth, admin_pass.c_str());
   char tempPassBuffer[64];
+  memset(tempPassBuffer, 0, 64);
   encryptAES((unsigned const char*)eKey, eIvAuth, tempPass.c_str(), tempPassBuffer);
-  admin_pass = tempPassBuffer;
+  
+  for (int j = 0; j < 64; j++) {
+    admin_pass[j] = tempPassBuffer[j];
+  }
+  
   Serial.print("admin_pass re-encrypted to: ");
   Serial.println(admin_pass);
 
@@ -2272,24 +2304,53 @@ void setup() {
           Serial.println(pVal);
         }
       }
-      if (pVal == PARAM_CONFIG_0) { // network
-        request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));/////////////////////////////////////////////////////////////////////
+      // Header checking for token
+      int headers = request->headers();
+      String tempBuff = "";
+      String token = "";
+      for (int i = 0; i < headers; i++) {
+        const AsyncWebHeader* h = request->getHeader(i);
+        //if(h->name().c_str()=="ESPSESSIONID"){
+        Serial.printf("_HEADER[%s]: %s\n", h->name().c_str(), h->value().c_str());
+        
+        tempBuff = h->name().c_str();
+        //Serial.println(tempBuff);
+        if (tempBuff == "Authorization") {
+          //strcpy(tempBuffer, h->value().c_str());
+          Serial.println("Found auth header...");
+          tempBuff = h->value().c_str();
+          //Serial.println(tempBuff);
+          tempBuff.replace("Bearer ","");
+          token = tempBuff.c_str();
+          Serial.println(token);
+        }
+        //}
       }
-      if (pVal == PARAM_CONFIG_1) { // calibration
-        request->send(200, "application/json", arrayToJsonString(csvCalibrationConfigName, csvCalibrationConfig, 3));
-      }
-      if (pVal == PARAM_CONFIG_2) { // sampling
-        request->send(200, "application/json", arrayToJsonString(csvTimeConfigName, csvTimeConfig, 2));
-      }
-      if (pVal == PARAM_CONFIG_3) { // alarms
-        request->send(200, "application/json", arrayToJsonString(csvAlarmConfigName, csvAlarmConfig, 12));    // sending all alarms, temp
-      }
-      if (pVal == PARAM_CONFIG_4) { // server
-        request->send(200, "application/json", arrayToJsonString(csvServerConfigName, csvServerConfig, 2));
-      }
-      if (pVal == PARAM_CONFIG_5) { // auth
-        request->send(200, "application/json", arrayToJsonString(csvAuthConfigName, csvAuthConfig, 1));
-      }
+      //if(isTokenValid(tempBuff)) {        // Enable on ui implementation
+      if(1) {
+        if (pVal == PARAM_CONFIG_0) { // network
+          request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));/////////////////////////////////////////////////////////////////////
+        }
+        if (pVal == PARAM_CONFIG_1) { // calibration
+          request->send(200, "application/json", arrayToJsonString(csvCalibrationConfigName, csvCalibrationConfig, 3));
+        }
+        if (pVal == PARAM_CONFIG_2) { // sampling
+          request->send(200, "application/json", arrayToJsonString(csvTimeConfigName, csvTimeConfig, 2));
+        }
+        if (pVal == PARAM_CONFIG_3) { // alarms
+          request->send(200, "application/json", arrayToJsonString(csvAlarmConfigName, csvAlarmConfig, 12));    // sending all alarms, temp
+        }
+        if (pVal == PARAM_CONFIG_4) { // server
+          request->send(200, "application/json", arrayToJsonString(csvServerConfigName, csvServerConfig, 2));
+        }
+        if (pVal == PARAM_CONFIG_5) { // auth
+          request->send(200, "application/json", arrayToJsonString(csvAuthConfigName, csvAuthConfig, 1));
+        }
+        //request->send(200, "text/plain", "Done.");
+      } else {
+        Serial.println("Token has expired");
+        request->send(401, "text/plain", "Invalid token.");
+      }      
 
     });
 
@@ -2304,16 +2365,37 @@ void setup() {
           postRequestValue[i] = p->value().c_str();
         }
       }
+      // Header checking for token
       int headers = request->headers();
+      String tempBuff = "";
+      String token = "";
       for (int i = 0; i < headers; i++) {
         const AsyncWebHeader* h = request->getHeader(i);
         //if(h->name().c_str()=="ESPSESSIONID"){
         Serial.printf("_HEADER[%s]: %s\n", h->name().c_str(), h->value().c_str());
+        
+        tempBuff = h->name().c_str();
+        //Serial.println(tempBuff);
+        if (tempBuff == "Authorization") {
+          //strcpy(tempBuffer, h->value().c_str());
+          Serial.println("Found auth header...");
+          tempBuff = h->value().c_str();
+          //Serial.println(tempBuff);
+          tempBuff.replace("Bearer ","");
+          token = tempBuff.c_str();
+          Serial.println(token);
+        }
         //}
       }
-      handlePostRequest(postRequestName, postRequestValue, params);
+      if(isTokenValid(token)) {
+        handlePostRequest(postRequestName, postRequestValue, params);
+        request->send(200, "text/plain", "Done.");
+      } else {
+        Serial.println("Token has expired");
+        request->send(401, "text/plain", "Invalid token.");
+      }
 
-      request->send(200, "text/plain", "Done.");
+      
       //should_restart = true;
     });
     
@@ -2362,12 +2444,11 @@ void setup() {
     int timeC = 0;
     struct tm timeinfoControl;
     while (!getLocalTime(&timeinfoControl) && timeC < 10) {
-      printLocalTime();
       delay(1000);
       timeC++;
       if (timeC == 10) Serial.println("Time sync timed out...");
     }
-
+    printLocalTime();
     getLocalTime(&tmstruct);
     if (isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
     
@@ -2576,7 +2657,7 @@ void loop() {
     detachInterrupt(PRECIPPIN);
 
     updateTime();
-    
+    //Serial.println("Server on...");
     //solarIrr = readSolarIrr(ADCPIN, 1);
 
     epochTime_2 = epochTime_1;        // Past time for computing? most likely remove
@@ -2587,13 +2668,14 @@ void loop() {
     }
 
     // Reading sensors
-    tempDHT = readTemp();
-    humid = readHumid();
+    //tempDHT = readTemp();
+    humid = readHumidDHT(dht);
     temp = readDSBTemp(tempDSB);
     solar = readSolarIrr(ADCPIN, solarRatio);
     airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
     windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
     precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
+    if (isBMP) pressure = readPressure(&bmp);
     // WebSocket sending readings
     sendReadings(currentReadingsString(readings, variableName, 7, epochTime_1));
 

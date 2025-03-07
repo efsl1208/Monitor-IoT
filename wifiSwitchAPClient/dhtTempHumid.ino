@@ -1,4 +1,4 @@
-float readTemp(){
+float readTempDHT(DHT dht){
   float t = dht.readTemperature();
   // Serial.print("Temperature: ");
   // Serial.print(t);
@@ -6,7 +6,7 @@ float readTemp(){
   return t;
 }
 
-float readHumid(){
+float readHumidDHT(DHT dht){
   float h = dht.readHumidity();
   // Serial.print("Humidity: ");
   // Serial.print(h);
@@ -18,7 +18,7 @@ void saveTemp(fs::FS& fs, const char* path, unsigned long epochTime){
   char buffer[30] = "";
   appendFileSD(fs, path, "temp");
   appendFileSD(fs, path, ",");
-  sprintf(buffer, "%f", readTemp());
+  sprintf(buffer, "%f", readTempDHT());
   appendFileSD(fs, path, buffer);
   appendFileSD(fs, path, ",");
   strcpy(buffer, "");
@@ -31,7 +31,7 @@ void saveHumid(fs::FS& fs, const char* path, unsigned long epochTime){
   char buffer[30] = "";
   appendFileSD(fs, path, "humid");
   appendFileSD(fs, path, ",");
-  sprintf(buffer, "%f", readHumid());
+  sprintf(buffer, "%f", readHumidDHT());
   appendFileSD(fs, path, buffer);
   appendFileSD(fs, path, ",");
   strcpy(buffer, "");
