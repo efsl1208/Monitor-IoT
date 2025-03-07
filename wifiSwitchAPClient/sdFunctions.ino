@@ -193,7 +193,7 @@ void appendCSVFileSD(fs::FS& fs, const char* path, String* text_vars[], int qty)
 
 // SD save readings in JSONL format
 void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identifier[], int arrayLength, int timeStamp){
-  Serial.println("Trying to write JSONL...");
+  //Serial.println("Trying to write JSONL...");
   char buffer[100] = "";
   char nBuffer[20] = "";
   File file = fs.open(path, FILE_APPEND);

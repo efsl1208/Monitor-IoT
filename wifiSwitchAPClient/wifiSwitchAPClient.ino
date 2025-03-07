@@ -162,8 +162,8 @@ String* csvCalibrationConfig[3] = {&solarRatioString, &precipRatioString, &airfl
 String* csvCalibrationConfigName[3] = {&solarRatioStringName, &precipRatioStringName, &airflowRatioStringName};
 
 // POST variables
-String postRequestName[12] = {""};
-String postRequestValue[12] = {""};
+String postRequestName[13] = {""};
+String postRequestValue[13] = {""};
 
 // Encrypt vars
 char tempMessage[64] = "";
@@ -694,6 +694,33 @@ String alarmString(float* values[], String* identifier[], int i, bool eventHL) {
   alarm = buffer;
   Serial.println(alarm);
   return alarm;
+}
+
+// Alarms to JSON
+String alarmToJsonString() {
+  char rtn[512] = "";
+  char nBuffer[10];
+  bool coma = true;
+  strcpy(rtn, "[");
+  for (int i = 0; i < 6; i++) {
+    if (alarmEnabled[i]) {
+      if(!coma) strcat(rtn, " , ");
+      strcat(rtn, "{ \"variable\": \"");
+      strcat(rtn, variableName[i + 1]->c_str());
+      strcat(rtn, "\", \"alto\": \"");
+      sprintf(nBuffer, "%.2f", *maxReadingsLimit[i]);
+      strcat(rtn, nBuffer);
+      strcat(rtn, "\", \"bajo\": \"");
+      sprintf(nBuffer, "%.2f", *minReadingsLimit[i]);
+      strcat(rtn, nBuffer);
+      strcat(rtn, "\" }");
+      coma = false;
+    }
+  }
+  strcat(rtn, "]");
+  Serial.print("Alarm String: ");
+  Serial.println(rtn);
+  return rtn;
 }
 
 // String from config values
@@ -1541,7 +1568,9 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
   bool requestFound = false;
   int index = 0;
   int caseSelect = -1;
-  char buffer[50] = "";
+  char buffer[100] = "";
+  char nBuffer[10] = "";
+  char boolBuffer[10] = "";
 
   while (!requestFound && index < requestLength) {
     if(postName[index] == PARAM_SEC) {
@@ -1656,6 +1685,54 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
     case 3:
       resetAlarms();
       // set alarms from request
+      for(int i = 0; i < requestLength; i++) {
+        Serial.print("Param name: ");
+        Serial.println(postName[i]);
+        Serial.print("Param value: ");
+        Serial.println(postValue[i]);
+        for(int j = 0; j < 6; j++) {
+          if(postName[i] == *csvAlarmConfigName[j + 6]) {     // Checking for "variable_alto"
+            Serial.print("Found value for: ");
+            Serial.println(*variableName[j+1]);
+            *csvAlarmConfig[j] = postValue[i - 1].c_str();
+            *csvAlarmConfig[j + 6] = postValue[i].c_str();
+            *minReadingsLimit[j] = atof(csvAlarmConfig[j]->c_str());    // Low value
+            
+            *maxReadingsLimit[j] = atof(csvAlarmConfig[j + 6]->c_str());        // High value
+            
+            Serial.println(*minReadingsLimit[j]);
+            Serial.println(*maxReadingsLimit[j]);
+
+            alarmEnabled[j] = true;
+          }
+        }
+      }
+      strcpy(buffer, "");
+      strcpy(boolBuffer, "");
+      for (int i = 0; i < 6; i++) {
+        Serial.println(i);
+        sprintf(nBuffer, "%.2f", *minReadingsLimit[i]);
+        strcat(buffer, nBuffer);
+        strcat(buffer, ",");
+        
+        const char* tempBuffer = alarmEnabled[i] ? "1" : "0";
+        strcat(boolBuffer, tempBuffer);
+        if(i < 5) {
+          //strcat(buffer, ",");
+          strcat(boolBuffer, ",");
+        }
+      }
+      for (int i = 0; i < 6; i++) {
+        sprintf(nBuffer, "%.2f", *maxReadingsLimit[i]);
+        strcat(buffer, nBuffer);
+        if(i < 5) strcat(buffer, ",");
+      }
+      if(isInitSD) {
+        Serial.println(buffer);
+        Serial.println(boolBuffer);
+        writeFileSD(SD, alarmConfigPath, buffer);
+        writeFileSD(SD, enabledAlarmConfigPath, boolBuffer);
+      }
       break;
     case 4:
       for(int i = 0; i < requestLength; i++) {
@@ -1709,8 +1786,8 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
 // Resets all alarms to default
 void resetAlarms(){
   for (int i = 0; i < 6; i++) {
-    *maxReadings[i] = 9999;
-    *minReadings[i] = -100;
+    *maxReadingsLimit[i] = 9999;
+    *minReadingsLimit[i] = -100;
     alarmEnabled[i] = false;
   }
   Serial.println("Alarms reset...");
@@ -2189,7 +2266,8 @@ void setup() {
     *maxReadingsLimit[i] = atof (csvAlarmConfig[i + 6]->c_str());
     if (*csvAlarmEnabled[i] == "1") {
       alarmEnabled[i] = true;
-      Serial.println(alarmEnabled[i]);
+      Serial.print("Alarm enabled index: ");
+      Serial.println(i);
     }
     // Serial.print("Alarm limit low: ");
     // Serial.println(*csvAlarmConfig[i]);
@@ -2338,7 +2416,7 @@ void setup() {
           request->send(200, "application/json", arrayToJsonString(csvTimeConfigName, csvTimeConfig, 2));
         }
         if (pVal == PARAM_CONFIG_3) { // alarms
-          request->send(200, "application/json", arrayToJsonString(csvAlarmConfigName, csvAlarmConfig, 12));    // sending all alarms, temp
+          request->send(200, "application/json", alarmToJsonString());
         }
         if (pVal == PARAM_CONFIG_4) { // server
           request->send(200, "application/json", arrayToJsonString(csvServerConfigName, csvServerConfig, 2));
@@ -2683,14 +2761,14 @@ void loop() {
       if (*readings[i] > *maxReadings[i]) *maxReadings[i] = *readings[i];
       if (*readings[i] < *minReadings[i]) *minReadings[i] = *readings[i];
       // Alarm checking
-      if (*readings[i] > *maxReadingsLimit[i] && alarmEnabled[i]) {
+      if ((*readings[i] > *maxReadingsLimit[i]) && alarmEnabled[i]) {
         //Send alarm High
         sendReadings(alarmString(readings, variableName, i, false));
         activeAlarm[i + 6] = true; 
         startAlarmTime[i + 6] = epochTime_1;
         sensorAlarm = true;
       }
-      if (*readings[i] < *minReadingsLimit[i] && alarmEnabled[i]) {
+      if ((*readings[i] < *minReadingsLimit[i]) && alarmEnabled[i]) {
         //Send alarm Low
         sendReadings(alarmString(readings, variableName, i, true));
         activeAlarm[i] = true;
@@ -2744,7 +2822,7 @@ void loop() {
         //*variableName[i+1]->toCharArray(bn, 20);
         //strcat(b, bn);
         strcat(b, ".JSONL");
-        Serial.println(b);
+        //Serial.println(b);
         writeSingleSensorSD(SD, b, *readings[i], *variableName[i + 1], epochTime_1);
       }
 
