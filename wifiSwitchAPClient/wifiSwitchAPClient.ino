@@ -18,6 +18,7 @@
 #include <esp_task_wdt.h>
 #include "mbedtls/aes.h"
 #include "mbedtls/ctr_drbg.h"
+#include <ESP32_MySQL.h>
 
 /*    Pins usage
 /     2: Led
@@ -134,6 +135,13 @@ String airflowAlarm = "0";
 String precipAlarm = "0";
 String pressureAlarm = "0";
 
+// long t_start_temp = 0;
+// long t_start_humid = 0;
+// long t_start_solar = 0;
+// long t_start_airflow = 0;
+// long t_start_precip = 0;
+// long t_start_pressure = 0;
+
 bool alarmEnabled[6] = {false};
 
 String* csvAlarmConfig[12] = {
@@ -145,7 +153,7 @@ String* csvAlarmConfigName[12] = {
   &maxHumidStringName, &maxTempStringName, &maxSolarStringName, &maxAirflowStringName, &maxPrecipStringName, &maxPressureStringName
 };
 String* csvAlarmEnabled[6] = {&humidAlarm, &tempAlarm, &solarAlarm, &airflowAlarm, &precipAlarm, &pressureAlarm};
-
+// long* alarmStart[6] = {&t_start_humid, &t_start_temp, &t_start_solar, &t_start_airflow, &t_start_precip, &t_start_pressure};
 
 // Variables for calibration
 String solarRatioString = "1.0";
@@ -189,6 +197,7 @@ const char* enabledAlarmConfigPath = "/config/alarmasActivas.conf";
 const char* calibrationConfigPath = "/config/calibracion.conf";
 const char* ivPathNetwork = "/config/sys0";
 const char* ivPathAuth = "/config/sys1";
+const char* alarmHistPath = "/misc/alarmHist.JSONL";
 
 const char* configPath = "/config/config.conf";
 const char* credentialsPath = "/config/credentials.conf";
@@ -338,6 +347,9 @@ float minAirflowLimit = -100;
 float minPrecipLimit = -100;
 float minPressureLimit = -100;
 float* minReadingsLimit[6] = {&minHumidLimit, &minTempLimit, &minSolarLimit, &minAirflowLimit, &minPrecipLimit, &minPressureLimit};
+
+// Alarm max value
+float alarmMaxValue[12] = {9999,9999,9999,9999,9999,9999,-100,-100,-100,-100,-100,-100};
 
 // Alarm control
 bool activeAlarm[12] = {false};
@@ -611,7 +623,7 @@ void initWS() {
 }
 
 // Sending readings
-void sendReadings(String data) {
+void sendMessageWS(String data) {
   ws.textAll(data);
 }
 
@@ -666,34 +678,181 @@ String currentReadingsString(float* values[], String* identifier[], int arrayLen
 }
 
 // Alarm to String
-String alarmString(float* values[], String* identifier[], int i, bool eventHL) {     // eventHL true -> bajo, eventHL false -> alto
+String alarmString(float* values[], String* identifier[], bool end) {     // eventHL true -> bajo, eventHL false -> alto
   Serial.print("Preparing alarm String for ws...");
-  char buffer[300] = "";
+  char buffer[512] = "";
   char nBuffer[20] = "";
-  String alarm = "";
+  bool coma = true;
+  //String alarm = "";
   // char eventType[10] = "";
   // if (eventHL) {
   //   eventType = "bajo";
   // } else {
   //   eventType = "alto";
   // }
-  strcpy(buffer, "{ \"tipo\": \"alarma\", \"data\": { \"variable\": \"");
-  strcpy(nBuffer, identifier[i+1]->c_str());
-  strcat(buffer, nBuffer);
-  strcat(buffer, "\", \"valor\": ");
-  sprintf (nBuffer, "%.2f", *values[i]);
-  strcat(buffer, nBuffer);
-  //strcat(buffer, ", \"eventType\": \"");
-  strcat(buffer, ",\"tipo_evento\": \"");
-  if (eventHL) {
-    strcat(buffer, "bajo");
-  } else {
-    strcat(buffer, "alto");
+  updateTime();
+  strcpy(buffer, "{ \"tipo\": \"alarmas_activas\", \"data\": [");
+  for (int i = 0; i < 12; i++) { 
+    if (activeAlarm[i]) {
+      if (!coma) strcat(buffer, ",");
+      strcat(buffer, "{ \"variable\": \"");
+      if (i < 6) {
+        strcpy(nBuffer, identifier[i+1]->c_str());
+      } else {
+        strcpy(nBuffer, identifier[i-5]->c_str());
+      }
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"valor\": \"");
+      
+      if (i < 6) {
+        sprintf (nBuffer, "%.2f", *values[i]);
+      } else {
+        sprintf (nBuffer, "%.2f", *values[i-6]);
+      }
+      strcat(buffer, nBuffer);
+      //strcat(buffer, ", \"eventType\": \"");
+      strcat(buffer, "\", \"tipo_evento\": \"");
+      if (i < 6) {
+        strcat(buffer, "bajo");
+      } else {
+        strcat(buffer, "alto");
+      }
+      strcat(buffer, "\", \"t_inicio\": \"");
+      sprintf(nBuffer, "%lu", startAlarmTime[i]);
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"t_actual\": \"");
+      sprintf(nBuffer, "%lu", getTimeEpoch(0));
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"t_final\": \"");
+      if (end) {
+        strcat(buffer, nBuffer);
+      } else {
+        strcat(buffer, "0");
+      }
+      strcat(buffer, "\" }");
+      coma = false;
+    }
   }
-  strcat(buffer, "\" } }");
-  alarm = buffer;
-  Serial.println(alarm);
-  return alarm;
+ 
+  strcat(buffer, "]}");
+  //alarm = buffer;
+  Serial.println(buffer);
+  return buffer;
+}
+
+// Save alarm in SD
+void saveAlarm(String* identifier[], int i) {     // eventHL true -> bajo, eventHL false -> alto
+  Serial.print("Preparing alarm String for saving...");
+  char buffer[512] = "";
+  char nBuffer[20] = "";
+  updateTime();
+  //for (int i = 0; i < 12; i++) { 
+    if (activeAlarm[i]) {
+      strcpy(buffer, "");
+      // if (!coma) strcat(buffer, ",");
+      strcat(buffer, "{ \"variable\": \"");
+      if (i < 6) {
+        strcpy(nBuffer, identifier[i+1]->c_str());
+      } else {
+        strcpy(nBuffer, identifier[i-5]->c_str());
+      }
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"valor_maximo\": \"");
+      sprintf (nBuffer, "%.2f", alarmMaxValue[i]);
+      strcat(buffer, nBuffer);
+      //strcat(buffer, ", \"eventType\": \"");
+      strcat(buffer, "\", \"tipo_evento\": \"");
+      if (i < 6) {
+        strcat(buffer, "bajo");
+      } else {
+        strcat(buffer, "alto");
+      }
+      strcat(buffer, "\", \"t_inicio\": \"");
+      sprintf(nBuffer, "%lu", startAlarmTime[i]);
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"t_final\": \"");
+      sprintf(nBuffer, "%lu", getTimeEpoch(0));
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\" } \n");
+      Serial.println(buffer);
+      appendFileSD(SD, alarmHistPath, buffer);
+    }
+  //}
+}
+
+// Reads old alarms
+String histAlarm() {
+  String line = "init";
+  bool coma = true;
+  File file = SD.open(alarmHistPath);
+  if (!file) {
+    Serial.println("Failed to open file to send alarms data...");
+    return "";
+  }
+  //strcpy(buffer, "{ \"data\": [");
+  strcpy(bigBuffer, "{ \"tipo\": \"alarmas_historico\", \"data\": [");
+  while (!(line == "")) {
+    // line = "";
+    line = readLineSD(file);
+    if(!coma && !(line == "")) strcat(bigBuffer, ",");
+    strcat(bigBuffer, line.c_str());
+    coma = false;
+
+  }
+  // esp_task_wdt_reset();
+  
+  file.close();
+  strcat(bigBuffer, "]}");
+  String rtn = bigBuffer;
+  strcpy(bigBuffer, "");
+  Serial.print("String to send to client: ");
+  Serial.println(rtn);
+  return rtn;
+}
+
+// Updates historic
+String histAlarmUpd() {
+  Serial.print("Preparing string for historic...");
+  char buffer[512] = "";
+  char nBuffer[20] = "";
+  bool coma = true;
+  updateTime();
+  strcpy(buffer, "{ \"tipo\": \"alarmas_historico_act\", \"data\": [");
+  for (int i = 0; i < 12; i++) { 
+    if (activeAlarm[i]) {
+      // strcpy(buffer, "");
+      if (!coma) strcat(buffer, ",");
+      strcat(buffer, "{ \"variable\": \"");
+      if (i < 6) {
+        strcpy(nBuffer, variableName[i+1]->c_str());
+      } else {
+        strcpy(nBuffer, variableName[i-5]->c_str());
+      }
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"valor_maximo\": \"");
+      sprintf (nBuffer, "%.2f", alarmMaxValue[i]);
+      strcat(buffer, nBuffer);
+      //strcat(buffer, ", \"eventType\": \"");
+      strcat(buffer, "\", \"tipo_evento\": \"");
+      if (i < 6) {
+        strcat(buffer, "bajo");
+      } else {
+        strcat(buffer, "alto");
+      }
+      strcat(buffer, "\", \"t_inicio\": \"");
+      sprintf(nBuffer, "%lu", startAlarmTime[i]);
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\", \"t_final\": \"");
+      sprintf(nBuffer, "%lu", getTimeEpoch(0));
+      strcat(buffer, nBuffer);
+      strcat(buffer, "\" }");
+      
+      coma = false;
+    }
+  }
+  strcat(buffer, "]}");
+  Serial.println(buffer);
+  return buffer;
 }
 
 // Alarms to JSON
@@ -755,6 +914,7 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
   switch (type) {
     case WS_EVT_CONNECT:
       Serial.printf ("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      client->text(histAlarm());
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf ("WebSocket client #%u disconnected\n", client->id());
@@ -1706,6 +1866,7 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
             alarmEnabled[j] = true;
           }
         }
+        esp_task_wdt_reset();
       }
       strcpy(buffer, "");
       strcpy(boolBuffer, "");
@@ -2755,7 +2916,7 @@ void loop() {
     precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
     if (isBMP) pressure = readPressure(&bmp);
     // WebSocket sending readings
-    sendReadings(currentReadingsString(readings, variableName, 7, epochTime_1));
+    sendMessageWS(currentReadingsString(readings, variableName, 7, epochTime_1));
 
     for(int i = 0; i < 6; i++) {
       if (*readings[i] > *maxReadings[i]) *maxReadings[i] = *readings[i];
@@ -2763,16 +2924,19 @@ void loop() {
       // Alarm checking
       if ((*readings[i] > *maxReadingsLimit[i]) && alarmEnabled[i]) {
         //Send alarm High
-        sendReadings(alarmString(readings, variableName, i, false));
+        
+        
+        if(!activeAlarm[i + 6]) startAlarmTime[i + 6] = epochTime_1;
         activeAlarm[i + 6] = true; 
-        startAlarmTime[i + 6] = epochTime_1;
         sensorAlarm = true;
+        sendMessageWS(alarmString(readings, variableName, false));
       }
       if ((*readings[i] < *minReadingsLimit[i]) && alarmEnabled[i]) {
         //Send alarm Low
-        sendReadings(alarmString(readings, variableName, i, true));
+        sendMessageWS(alarmString(readings, variableName, false));
+        
+        if(!activeAlarm[i]) startAlarmTime[i] = epochTime_1;
         activeAlarm[i] = true;
-        startAlarmTime[i] = epochTime_1;
         sensorAlarm = true;
       }
       //Serial.println("Stopped checking...");
@@ -2782,15 +2946,25 @@ void loop() {
     if (sensorAlarm) {
       for(int i = 0; i < 6; i++) {
         //Serial.println("Checking alarm low");
+        if (*readings[i] < alarmMaxValue[i]) alarmMaxValue[i] = *readings[i];
         if (activeAlarm[i] && (*readings[i] > *minReadingsLimit[i])) {
           endAlarmTime[i] = epochTime_1;
+          saveAlarm(variableName, i);
+          sendMessageWS(alarmString(readings, variableName, true));
+          sendMessageWS(histAlarmUpd());
+          activeAlarm[i] = false;
           sensorAlarm = false;
         }
       }
       for(int i = 6; i < 12; i++) { // might be a bit inefficient
         //Serial.println("Checking alarm high");
+        if (*readings[i - 6] > alarmMaxValue[i]) alarmMaxValue[i] = *readings[i - 6];
         if (activeAlarm[i] && (*readings[i - 6] < *maxReadingsLimit[i - 6])) {
           endAlarmTime[i] = epochTime_1;
+          saveAlarm(variableName, i);
+          sendMessageWS(alarmString(readings, variableName, true));
+          sendMessageWS(histAlarmUpd());
+          activeAlarm[i] = false;
           sensorAlarm = false;
         }
       }
