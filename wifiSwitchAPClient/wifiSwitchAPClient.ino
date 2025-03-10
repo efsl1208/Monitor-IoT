@@ -18,7 +18,9 @@
 #include <esp_task_wdt.h>
 #include "mbedtls/aes.h"
 #include "mbedtls/ctr_drbg.h"
-#include <ESP32_MySQL.h>
+#include <HTTPClient.h>
+//#include <ESP32_MySQL.h>
+
 
 /*    Pins usage
 /     2: Led
@@ -101,6 +103,25 @@ String gmtStringName = "z_horaria";
 //String* csvTimeConfig[5] = {&sampleTimeString, &upperHourLimitS, &lowerHourLimitS, &upperMinLimitS, &lowerMinLimitS};
 String* csvTimeConfig[2] = {&sampleTimeString, &gmtString};
 String* csvTimeConfigName[2] = {&sampleTimeStringName, &gmtStringName};
+
+// Database info
+// String databaseName = "";
+// String tableName = "";
+// String indexColName = "";
+// String variableColName = "";
+// String valueColName = "";
+// String timestampColName = "";
+// String* databaseNames[6] = {&databaseName, &tableName, &indexColName, &variableColName, &valueColName, &timestampColName};
+// float databaseValues[740] = {-1};
+// unsigned long databaseTimestamps[740] = {0};
+
+// long databaseOffset = 0;
+// long databaseSentTodayOffset = 0;
+
+unsigned long lastInsertTimestamp = 1740801600;    //2025-03-01 YYYY-MM-DD
+WiFiClient client;
+HTTPClient http;
+
 
 String maxHumidString  = "9999";
 String maxTempString  = "9999";
@@ -198,6 +219,7 @@ const char* calibrationConfigPath = "/config/calibracion.conf";
 const char* ivPathNetwork = "/config/sys0";
 const char* ivPathAuth = "/config/sys1";
 const char* alarmHistPath = "/misc/alarmHist.JSONL";
+const char* lastInsertPath = "/config/sys2";
 
 const char* configPath = "/config/config.conf";
 const char* credentialsPath = "/config/credentials.conf";
@@ -773,7 +795,7 @@ void saveAlarm(String* identifier[], int i) {     // eventHL true -> bajo, event
       strcat(buffer, "\", \"t_final\": \"");
       sprintf(nBuffer, "%lu", getTimeEpoch(0));
       strcat(buffer, nBuffer);
-      strcat(buffer, "\" } \n");
+      strcat(buffer, "\" }\n");
       Serial.println(buffer);
       appendFileSD(SD, alarmHistPath, buffer);
     }
@@ -1508,10 +1530,14 @@ String sensorData(String startTime, String endTime, String variable, String freq
   //Serial.println("Done!");
   char pathBuffer[40] = "";
   char dBuffer[10] = "";
-  Serial.println(strtoul(startTime.c_str(), NULL, 0));
-  DateTime selectedDate = DateTime(strtoul(startTime.c_str(), NULL, 0));
+  
   //time_t selectedDate = startTime.toInt();
   bool coma = false;
+  
+  // Timestamp to date
+  DateTime selectedDate = DateTime(strtoul(startTime.c_str(), NULL, 0));
+  Serial.println(strtoul(startTime.c_str(), NULL, 0));
+  
   int selectedDay = selectedDate.day();
   int selectedMonth = selectedDate.month();
   int selectedYear = selectedDate.year();
@@ -1911,7 +1937,7 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
       // writeFileFS(LittleFS, serverConfigPath, buffer);
       // SD write
       if (isInitSD) writeFileSD(SD, serverConfigPath, buffer);
-      should_restart = true;
+      //should_restart = true;
       break;
     case 5:
       for(int i = 0; i < requestLength; i++) {
@@ -1944,6 +1970,142 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
   }
 }
 
+// Sends POST request to server to dump data
+void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Testing //////////////////////////////////////////////////////////////////////
+  updateTime();
+  unsigned long tempTimestamp = timestamp;
+  unsigned long tomorrowTimestamp = getTimeEpoch(0) + 86400;
+  String line = "init";
+  bool coma = true;
+  bool connOK = true;
+  char buffer[20] = "";
+  char dataPathDate[30] = "";
+  char dataPath[60] = "";
+  // Timestamp to date
+  DateTime lastInsertDate = DateTime(tempTimestamp);
+  Serial.println(tempTimestamp);
+  DateTime tomorrow = DateTime(tomorrowTimestamp);
+  
+  int lastInsertDay = lastInsertDate.day();
+  int lastInsertMonth = lastInsertDate.month();
+  int lastInsertYear = lastInsertDate.year();
+  
+  int currentDay = tomorrow.day();
+  int currentMonth = tomorrow.month();
+  int currentYear = tomorrow.year();
+  Serial.println((String)"http://" + url + ":" + port + "/data");
+  http.begin(client, (String)"http://" + url + ":" + port + "/data");
+  http.addHeader("Content-Type", "application/json");
+
+  int httpResponseCode = 500;
+
+  //Troubleshooting
+  Serial.println(lastInsertDay);
+  Serial.println(lastInsertMonth);
+  Serial.println(lastInsertYear);
+
+  Serial.println(currentDay);
+  Serial.println(currentMonth);
+  Serial.println(currentYear);
+
+  Serial.println(getTimeEpoch(0));
+  
+  while ( ( (lastInsertDay != currentDay) || (lastInsertMonth != currentMonth) || (lastInsertYear != currentYear) ) && (tempTimestamp < tomorrowTimestamp) ) {
+    // Prepare path
+    strcpy(dataPathDate, "/");
+    sprintf(buffer, "%d", lastInsertYear);
+    strcat(dataPathDate, buffer);
+    strcat(dataPathDate, "/");
+    sprintf(buffer, "%d", lastInsertMonth);
+    strcat(dataPathDate, buffer);
+    strcat(dataPathDate, "/");
+    sprintf(buffer, "%d", lastInsertYear);
+    strcat(dataPathDate, buffer);
+    strcat(dataPathDate, "-");
+    sprintf(buffer, "%02d", lastInsertMonth);
+    strcat(dataPathDate, buffer);
+    strcat(dataPathDate, "-");
+    sprintf(buffer, "%02d", lastInsertDay);
+    strcat(dataPathDate, buffer);
+    strcat(dataPathDate, "_");
+    Serial.print("Date changed: ");
+    Serial.println(dataPathDate);
+    // Read data for each sensor
+    for (int i = 0; i < 7; i++) {
+      strcpy(bigBuffer, "[");
+      strcpy(dataPath, dataPathDate);
+      strcat(dataPath, identifier[i + 1]->c_str());
+      strcat(dataPath, ".JSONL");
+      File file = SD.open(dataPath);
+      if (!file) {
+        Serial.println("Failed to open file to fetch data...");
+        //return "";
+      } else {
+        while (line != "") {
+          line = "";
+          line = readLineSD(file);
+          if (!coma && line != "") strcat(bigBuffer, ",");
+          strcat(bigBuffer, line.c_str());
+          coma = false;
+        }
+      }
+      line = "init";
+      file.close();    
+      strcat(bigBuffer, "]");
+      Serial.println(bigBuffer);
+      coma = true;
+      // Send data
+      httpResponseCode = http.POST(bigBuffer);
+      Serial.print("HTTP Response code: ");
+      Serial.println(httpResponseCode);
+      if(httpResponseCode < 200 || httpResponseCode > 399) {
+        connOK = false;
+      }
+    }  
+    // Save timestamp of insert if successful
+    if (connOK) {
+      lastInsertTimestamp = tempTimestamp;
+      sprintf(buffer, "%lu", lastInsertTimestamp);
+      writeFileSD(SD, lastInsertPath, buffer);
+      Serial.println("New timestamp saved");
+    } else {
+      http.end();
+      Serial.println("Error sending to HTTP");
+      return;
+    }
+    // +24h comparison timestamp
+    tempTimestamp += 86400;
+    lastInsertDate = DateTime(tempTimestamp);
+  
+    lastInsertDay = lastInsertDate.day();
+    lastInsertMonth = lastInsertDate.month();
+    lastInsertYear = lastInsertDate.year();
+  }
+  //Write file to LittleFS
+  http.end();
+
+
+  // if( < getTimeEpoch(0)) {
+
+  //   http.begin(client, (String)url + ":" + port );
+  //   //http.setReuse(false);
+  //   //http.addHeader("Authorization", (String) "Token rG5uAeglfDcyuzHDzJabXgBjiQUfDIyzDQHSQ-AK2MdOmUEeZc3Z-_df1aJw1LME6OT-dbHlcTG6SO1nu7tLPg==");
+  //   http.addHeader("Content-Type", "application/json");
+  //   String jsonArray = "[";
+  //   updateTime();
+  //   cont++;
+  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-1500) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorA\",\"valor\":0.00},";
+  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-2000) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorB\", \"valor\":0.01},";
+  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-2500) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorC\", \"valor\":0.02}";
+  //   jsonArray += "]";
+  //   Serial.print("Sending: ");
+  //   Serial.println(jsonArray);
+  //   int httpResponseCode = http.POST(jsonArray);
+  //   Serial.print("HTTP Response code: ");
+  //   Serial.println(httpResponseCode);
+  //   http.end();
+  // }
+}
 // Resets all alarms to default
 void resetAlarms(){
   for (int i = 0; i < 6; i++) {
@@ -2049,6 +2211,7 @@ void removeToken(String tokenValueS) {
   }
 }
 
+// Token to JSON
 String tokenJsonString(String token) {
   char rtn[50] = "";
   strcpy(rtn, "{\"token\": \"");
@@ -2383,7 +2546,7 @@ void setup() {
     rawTextLine = readMultipleLinesSD(SD, authConfigPath);
     if (rawTextLine != "") admin_pass = rawTextLine;
     rawTextLine = readFileSD(SD, serverConfigPath);
-    if (rawTextLine != "") parse_csv(csvServerConfig, &rawTextLine, ",", 1);
+    if (rawTextLine != "") parse_csv(csvServerConfig, &rawTextLine, ",", 2);
     rawTextLine = readFileSD(SD, timeConfigPath);
     if (rawTextLine != "") parse_csv(csvTimeConfig, &rawTextLine, ",", 2);
     rawTextLine = readFileSD(SD, alarmConfigPath);
@@ -2396,13 +2559,15 @@ void setup() {
     // if (rawTextLine != "") strcpy(eIvNetwork, rawTextLine.c_str());
     rawTextLine = readMultipleLinesSD(SD, ivPathAuth);
     if (rawTextLine != "") strcpy(eIvAuth, rawTextLine.c_str());
+    rawTextLine = readFileSD(SD, lastInsertPath);
+    if (rawTextLine != "") lastInsertTimestamp =strtoul(rawTextLine.c_str(), NULL, 0);
   } else {
     rawTextLine = readFileFS(LittleFS, networkConfigPath);
     if (rawTextLine != "") parse_csv(csvNetworkConfig, &rawTextLine, ",", 5);
     rawTextLine = readMultipleLinesFS(LittleFS, authConfigPath);
     if (rawTextLine != "") admin_pass = rawTextLine;
     rawTextLine = readFileFS(LittleFS, serverConfigPath);
-    if (rawTextLine != "") parse_csv(csvServerConfig, &rawTextLine, ",", 1);
+    if (rawTextLine != "") parse_csv(csvServerConfig, &rawTextLine, ",", 2);
     rawTextLine = readFileFS(LittleFS, timeConfigPath);
     if (rawTextLine != "") parse_csv(csvTimeConfig, &rawTextLine, ",", 2);
     rawTextLine = readFileFS(LittleFS, alarmConfigPath);
@@ -2415,6 +2580,8 @@ void setup() {
     // if (rawTextLine != "") strcpy(eIvNetwork, rawTextLine.c_str());
     rawTextLine = readMultipleLinesFS(LittleFS, ivPathAuth);
     if (rawTextLine != "") strcpy(eIvAuth, rawTextLine.c_str());
+    rawTextLine = readFileFS(LittleFS, lastInsertPath);
+    if (rawTextLine != "") lastInsertTimestamp =strtoul(rawTextLine.c_str(), NULL, 0);
   }
 
   // String to int
@@ -2875,6 +3042,11 @@ void setup() {
   writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
   
   Serial.println("Server ready!");
+
+  //Testing
+  Serial.print("Trying to send to database...");
+  sendPostToDatabase(lastInsertTimestamp, variableName);
+
 }
 
 void loop() {
@@ -2969,6 +3141,8 @@ void loop() {
         }
       }
     }
+
+
 
     // Saving readings 
     realTimeC += baseTime;         // Adding +1s
