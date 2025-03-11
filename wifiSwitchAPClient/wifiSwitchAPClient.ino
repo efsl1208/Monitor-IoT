@@ -45,6 +45,8 @@ char bigBuffer[50400] = "";      // feels wrong
 RTC_DS3231 rtc;
 int baseTime = 1000;                  // base sample time for real time measurements 
 int realTimeC = 0;
+int databaseTimer = 1000 * 60 * 5;        // After n minutes have passed, tries to send data
+int databaseC = 0;
 #define RTCINTERRUPTPIN 15            // for consistent readings
 volatile bool alarmRTC = false;       // flag for alarm
 
@@ -238,6 +240,7 @@ char olderDateChar[20] = "";
 
 // Logic variables
 bool should_restart = false;
+bool factReset = false;
 bool isInitSD = false;
 bool isRTC = false;
 
@@ -321,6 +324,10 @@ float precip = -1;
 float pressure = -1;
 //float* readings[8] = {&tempDHT, &humidDHT, &tempDSB_reading, &solar, &airflow, &windDir, &precip, &pressure};
 float* readings[7] = {&humid, &temp, &solar, &airflow, &precip, &pressure, &windDir};
+
+// Backup arrays in memory, when SD is not available
+unsigned long backupTimestamp[20] = {0};
+float backupValues[7][20];
 
 // Variables to send data
 String start;
@@ -490,15 +497,14 @@ const char* PARAM_CONFIG_2 = "datos";
 const char* PARAM_CONFIG_3 = "alarmas";
 const char* PARAM_CONFIG_4 = "servidor";
 const char* PARAM_CONFIG_5 = "autenticacion";
+const char* PARAM_CONFIG_6 = "reestablecer";
 const char* PARAM_SEC = "seccion";
 
 const char* anual = "anual";
 const char* monthly = "mensual";
 const char* daily = "diario";
-// IP variables
+// Network variables
 IPAddress localIP;
-
-// Set your Gateway IP address
 IPAddress localGateway;
 IPAddress subnet(255, 255, 255, 0);
 IPAddress dns(8,8,8,8);
@@ -538,7 +544,27 @@ void parse_csv(String* text_vars[], String* csv, char* del, int qty) {
 
 // Config Factory reset
 void resetConfig() {
-  writeFileFS(LittleFS, credentialsPath, "");
+  writeFileFS(LittleFS, networkConfigPath, "");
+  writeFileFS(LittleFS, authConfigPath, "");
+  writeFileFS(LittleFS, serverConfigPath, "");
+  writeFileFS(LittleFS, timeConfigPath, "");
+  writeFileFS(LittleFS, alarmConfigPath, "");
+  writeFileFS(LittleFS, enabledAlarmConfigPath, "");
+  writeFileFS(LittleFS, calibrationConfigPath, "");
+  writeFileFS(LittleFS, ivPathNetwork, "");
+  writeFileFS(LittleFS, ivPathAuth, "");
+  if (isInitSD) {
+    writeFileSD(SD, networkConfigPath, "");
+    writeFileSD(SD, authConfigPath, "");
+    writeFileSD(SD, serverConfigPath, "");
+    writeFileSD(SD, timeConfigPath, "");
+    writeFileSD(SD, alarmConfigPath, "");
+    writeFileSD(SD, enabledAlarmConfigPath, "");
+    writeFileSD(SD, calibrationConfigPath, "");
+    writeFileSD(SD, ivPathNetwork, "");
+    writeFileSD(SD, ivPathAuth, "");
+  }
+  factReset = true;
 }
 
 // Gets time in EPOCH
@@ -1368,7 +1394,7 @@ void changeMinPath() {
 
 }
 
-// Splits and returns String array, ignores {}
+// Splits and returns String array, ignores {} and "
 void splitString(String text, String array[], char del) {
   byte y = 0;
   for(byte i = 0; i < text.length(); i++) {
@@ -1760,6 +1786,7 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
 
   while (!requestFound && index < requestLength) {
     if(postName[index] == PARAM_SEC) {
+
       requestFound = true;
       index += -1;
     }
@@ -1770,18 +1797,23 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
     Serial.println("Request not found!");
     return;
   }
-
+  Serial.print("Post value: ");
+  Serial.println(postValue[index]);
+  
   if(postValue[index] == PARAM_CONFIG_0) caseSelect = 0;  //network
   if(postValue[index] == PARAM_CONFIG_1) caseSelect = 1;  //calibration
   if(postValue[index] == PARAM_CONFIG_2) caseSelect = 2;  //timing
   if(postValue[index] == PARAM_CONFIG_3) caseSelect = 3;  //alarms
   if(postValue[index] == PARAM_CONFIG_4) caseSelect = 4;  //server
-  if(postValue[index] == PARAM_CONFIG_5) caseSelect = 5;  //auth       
+  if(postValue[index] == PARAM_CONFIG_5) caseSelect = 5;  //auth
+  if(postValue[index] == PARAM_CONFIG_6) caseSelect = 6;  //factoryRestore       
   
   // Saving parameters        
   switch(caseSelect) {
     case 0:
       for(int i = 0; i < requestLength; i++) {
+        Serial.println(postName[i]);
+        Serial.println(postValue[i]);
         if(postName[i] == *csvNetworkConfigName[0]) { //mode
           mode = postValue[i].c_str();
         }
@@ -1791,11 +1823,12 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
         if(postName[i] == *csvNetworkConfigName[2]) { //pass/////////////////////////////////////////////////////////////////////////////////////////////////
           pass = postValue[i].c_str();
           //encryptAES((unsigned const char*)eKey, pass.c_str(), passBuffer);
+          if(pass == "") pass = "\"NULL\"";
         }
         if(postName[i] == *csvNetworkConfigName[3]) { //ip
           ip = postValue[i].c_str();
         }
-        if(postName[i] == *csvNetworkConfigName[5]) { //gateway
+        if(postName[i] == *csvNetworkConfigName[4]) { //gateway
           gateway = postValue[i].c_str();
         }
       }
@@ -1967,14 +2000,19 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
       }
 
       break;
+    case 6: // Factory reset
+    resetConfig();
+    factReset = true;
   }
 }
 
 // Sends POST request to server to dump data
 void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Testing //////////////////////////////////////////////////////////////////////
   updateTime();
+
+  String message;
   unsigned long tempTimestamp = timestamp;
-  unsigned long tomorrowTimestamp = getTimeEpoch(0) + 86400;
+  unsigned long tomorrowTimestamp = getTimeEpoch(0-gmtOffset) + 86400;
   String line = "init";
   bool coma = true;
   bool connOK = true;
@@ -1983,7 +2021,7 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
   char dataPath[60] = "";
   // Timestamp to date
   DateTime lastInsertDate = DateTime(tempTimestamp);
-  Serial.println(tempTimestamp);
+ 
   DateTime tomorrow = DateTime(tomorrowTimestamp);
   
   int lastInsertDay = lastInsertDate.day();
@@ -2007,8 +2045,9 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
   Serial.println(currentDay);
   Serial.println(currentMonth);
   Serial.println(currentYear);
-
-  Serial.println(getTimeEpoch(0));
+  
+  Serial.println(tempTimestamp);
+  Serial.println(getTimeEpoch(0-gmtOffset));
   
   while ( ( (lastInsertDay != currentDay) || (lastInsertMonth != currentMonth) || (lastInsertYear != currentYear) ) && (tempTimestamp < tomorrowTimestamp) ) {
     // Prepare path
@@ -2032,7 +2071,8 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
     Serial.println(dataPathDate);
     // Read data for each sensor
     for (int i = 0; i < 7; i++) {
-      strcpy(bigBuffer, "[");
+      // strcpy(bigBuffer, "[");
+      message = "[";
       strcpy(dataPath, dataPathDate);
       strcat(dataPath, identifier[i + 1]->c_str());
       strcat(dataPath, ".JSONL");
@@ -2042,20 +2082,38 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
         //return "";
       } else {
         while (line != "") {
+          String group[5];
+          String individual[5][5];
           line = "";
           line = readLineSD(file);
-          if (!coma && line != "") strcat(bigBuffer, ",");
-          strcat(bigBuffer, line.c_str());
-          coma = false;
+          // Check for timestamp, don't send if it's lower than the last sent
+          // Serial.println(line);
+
+          splitString(line, group, ',');
+          splitString(group[0],individual[0],':');
+
+          // Serial.println(strtoul(individual[0][1].c_str(), NULL, 0));
+          //Serial.println(timestamp - gmtOffset);
+
+          if (strtoul(individual[0][1].c_str(), NULL, 0) >= (timestamp - gmtOffset)) {   // >= In case the value was not saved at the time 
+            // if (!coma && line != "") strcat(bigBuffer, ",");
+            // strcat(bigBuffer, line.c_str());
+            if (!coma && line != "") message += ",";
+            message += line;
+            coma = false;
+            //Serial.println(message);
+          }        
         }
       }
       line = "init";
       file.close();    
-      strcat(bigBuffer, "]");
-      Serial.println(bigBuffer);
+      // strcat(bigBuffer, "]");
+      message += "]";
+      // Serial.println(bigBuffer);
+      Serial.println(message);
       coma = true;
       // Send data
-      httpResponseCode = http.POST(bigBuffer);
+      httpResponseCode = http.POST(message);
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
       if(httpResponseCode < 200 || httpResponseCode > 399) {
@@ -2064,7 +2122,11 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
     }  
     // Save timestamp of insert if successful
     if (connOK) {
-      lastInsertTimestamp = tempTimestamp;
+      if(isRTC) {
+        lastInsertTimestamp = getEpochRTC(0);
+      } else {
+        lastInsertTimestamp = getTimeEpoch(0-gmtOffset);
+      }
       sprintf(buffer, "%lu", lastInsertTimestamp);
       writeFileSD(SD, lastInsertPath, buffer);
       Serial.println("New timestamp saved");
@@ -2106,6 +2168,71 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
   //   http.end();
   // }
 }
+
+// Sends POST using data in memory if no SD is detected
+void sendPostBackup(String* identifier[]) {
+  String message = "";
+  char buffer[128];
+  char tNameBuffer[20] = "{\"t\": \"";
+  char bodyBuffer[40];
+  char nBuffer[20];
+  int dataSent = 0;
+  int httpResponseCode = 500;
+  bool connOK = true;
+
+  Serial.println((String)"http://" + url + ":" + port + "/data");
+  http.begin(client, (String)"http://" + url + ":" + port + "/data");
+  http.addHeader("Content-Type", "application/json");
+
+  for (int i = 0; i < 7; i++) {
+    message = "[";
+    strcpy(bodyBuffer, "\" ,\"variable\":\"");
+    strcat(bodyBuffer, identifier[i + 1]->c_str());
+    strcat(bodyBuffer, "\", \"valor\":\"");
+    
+    for (int j = 0; j < 20; j++) {
+      if (backupTimestamp[j] > 0) {
+        if (j > 0) message += ",";
+        strcpy(buffer, tNameBuffer);
+        sprintf(nBuffer, "%lu", backupTimestamp[j]);
+        strcat(buffer, nBuffer);
+        strcat(buffer, bodyBuffer);
+        sprintf(nBuffer, "%.3f", backupValues[i][j]);
+        strcat(buffer, "\"}");
+        message += buffer;
+        dataSent++;
+      }
+    }
+    message += "]";
+    Serial.println(message);
+    httpResponseCode = http.POST(message);
+    Serial.print("HTTP Response code: ");
+    Serial.println(httpResponseCode);
+    if(httpResponseCode < 200 || httpResponseCode > 399) {
+      connOK = false;
+    }
+  }
+  // If all data is successfully sent, remove data from arrays
+  if (connOK && dataSent < 20) {
+    for (int i = 0; i < 20 - dataSent; i++) {
+      backupTimestamp[i] = backupTimestamp[dataSent + i - 1];
+      for (int j = 0; j < 7; j++) {
+        backupValues[j][i] = backupValues[j][dataSent + i - 1];
+      }
+    }
+  } else if (connOK) {
+    // Defaults arrays
+    for (int i = 0; i < 20; i++) {
+      backupTimestamp[i] = 0;
+      for (int j = 0; j < 7; j++) {
+        backupValues[j][i] = -1;
+      }
+    }
+  }
+
+  http.end();
+}
+
 // Resets all alarms to default
 void resetAlarms(){
   for (int i = 0; i < 6; i++) {
@@ -2627,7 +2754,7 @@ void setup() {
   Serial.println(admin_pass);
 
   ////////////////////////////////////////////////////////////////////////////////////////////
-  if (mode == "") mode = "2";  //0 -> AP Mode, 1 -> STA Mode, 2 -> No config.
+  if (mode == "") mode = "0";  //2 -> AP Mode, 1 -> STA Mode, 0 -> No config.
 
   Serial.println(mode);
   Serial.println(ssid);  
@@ -2636,7 +2763,7 @@ void setup() {
   Serial.println(ip);
   Serial.println(gateway);
 
-  // Mode = 0 AP MODE, Mode = 1 STATION MODE
+  // Mode = 2 AP MODE, Mode = 1 STATION MODE
   if (mode == "1" && initWiFi()) {
     /*
     /
@@ -2732,8 +2859,8 @@ void setup() {
         }
         //}
       }
-      //if(isTokenValid(tempBuff)) {        // Enable on ui implementation
-      if(1) {
+      if(isTokenValid(token)) {        // Enable on ui implementation
+      //if(1) {
         if (pVal == PARAM_CONFIG_0) { // network
           request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));/////////////////////////////////////////////////////////////////////
         }
@@ -2854,6 +2981,8 @@ void setup() {
       timeC++;
       if (timeC == 10) Serial.println("Time sync timed out...");
     }
+    if (isRTC && !getLocalTime(&timeinfoControl)) manualTimeSet(getEpochRTC(gmtOffset));
+    
     printLocalTime();
     getLocalTime(&tmstruct);
     if (isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
@@ -2861,7 +2990,7 @@ void setup() {
     server.begin();
 
 
-  } else if (mode == "0") {
+  } else if (mode == "2") {
     /*
     /
     /
@@ -2869,39 +2998,246 @@ void setup() {
     // AP Mode
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
-    if (pass != "") WiFi.softAP(ssid.c_str(), pass.c_str());
-    else WiFi.softAP(ssid.c_str(), NULL);
 
+    IPAddress apIP(192,168,0,1);
+    IPAddress apGateway(192,168,0,1);
+    WiFi.softAPConfig(apIP, apGateway, subnet);
+    Serial.print("AP password: ");
+    Serial.println(pass);
+    if (pass != "\"NULL\"") {
+      WiFi.softAP(ssid.c_str(), pass.c_str()); 
+    } else {
+      WiFi.softAP(ssid.c_str(), NULL);
+      pass = "";
+      ip = "192.168.0.1";
+      gateway = "192.168.0.1";
+    }
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
     Serial.println(IP);
 
-    // Web Server Root URL
+    // Websocket
+    initWS();
+    // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
-      request->send(LittleFS, "/setup/setup.html", "text/html");
+      request->send(LittleFS, "/mainUI/index.html", "text/html"); // main UI loading
+    });
+    server.serveStatic("/", LittleFS, "/");
+
+    server.on("/fechas", HTTP_GET, [](AsyncWebServerRequest* request) {
+      Serial.println("Trying to send dates...");
+      updateTime();
+      oldestDate();
+      Serial.println("Oldest date fetch!");
+      request->send(200, "application/json", oldestDateString());
     });
 
-    server.serveStatic("/", LittleFS, "/");
+    server.on("/datos", HTTP_GET, [](AsyncWebServerRequest* request) {
+      int params = request->params();
+
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->name() == PARAM_DATA_0) {
+          start = p->value().c_str();
+          Serial.print("Start time set to: ");
+          Serial.println(start);
+        }
+        // HTTP GET end time
+        //end = "0";
+        if (p->name() == PARAM_DATA_1) {
+          end = p->value().c_str();
+          Serial.print("End time set to: ");
+          Serial.println(end);
+        }
+        // HTTP GET sensor name
+        if (p->name() == PARAM_DATA_2) {
+          sensor = p->value().c_str();
+          Serial.print("Sensor set to: ");
+          Serial.println(sensor);
+        }
+        // HTTP GET frequency
+        if (p->name() == PARAM_DATA_3) {
+          frequency = p->value().c_str();
+          Serial.print("Frequency: ");
+          Serial.println(frequency);
+        }
+      }
+
+      request->send(200, "application/json", sensorData(start, end, sensor, frequency));
+      //esp_task_wdt_reset();
+    });
+
+    server.on("/config", HTTP_GET, [](AsyncWebServerRequest* request) {
+      Serial.println("Trying to send config data for: ");
+      int params = request->params();
+      String pVal = "";
+      // const AsyncWebParameter* p = request->getParam(params);
+      // const char* pVal = p->value().c_str();
+      // Serial.print("Parameter received: ");
+      // Serial.println(pVal);
+
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->name() == PARAM_SEC) {
+          pVal = p->value().c_str();
+          Serial.print("Seccion: ");
+          Serial.println(pVal);
+        }
+      }
+      // Header checking for token
+      int headers = request->headers();
+      String tempBuff = "";
+      String token = "";
+      for (int i = 0; i < headers; i++) {
+        const AsyncWebHeader* h = request->getHeader(i);
+        Serial.printf("_HEADER[%s]: %s\n", h->name().c_str(), h->value().c_str());
+        
+        tempBuff = h->name().c_str();
+        //Serial.println(tempBuff);
+        if (tempBuff == "Authorization") {
+          //strcpy(tempBuffer, h->value().c_str());
+          Serial.println("Found auth header...");
+          tempBuff = h->value().c_str();
+          //Serial.println(tempBuff);
+          tempBuff.replace("Bearer ","");
+          token = tempBuff.c_str();
+          Serial.println(token);
+        }
+        //}
+      }
+      if(isTokenValid(token)) {        // Enable on ui implementation
+      //if(1) {
+        if (pVal == PARAM_CONFIG_0) { // network
+          request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));/////////////////////////////////////////////////////////////////////
+        }
+        if (pVal == PARAM_CONFIG_1) { // calibration
+          request->send(200, "application/json", arrayToJsonString(csvCalibrationConfigName, csvCalibrationConfig, 3));
+        }
+        if (pVal == PARAM_CONFIG_2) { // sampling
+          request->send(200, "application/json", arrayToJsonString(csvTimeConfigName, csvTimeConfig, 2));
+        }
+        if (pVal == PARAM_CONFIG_3) { // alarms
+          request->send(200, "application/json", alarmToJsonString());
+        }
+        if (pVal == PARAM_CONFIG_4) { // server
+          request->send(200, "application/json", arrayToJsonString(csvServerConfigName, csvServerConfig, 2));
+        }
+        if (pVal == PARAM_CONFIG_5) { // auth
+          request->send(200, "application/json", arrayToJsonString(csvAuthConfigName, csvAuthConfig, 1));
+        }
+        //request->send(200, "text/plain", "Done.");
+      } else {
+        Serial.println("Token has expired");
+        request->send(401, "text/plain", "Invalid token.");
+      }      
+
+    });
+
+    server.on("/config", HTTP_POST, [](AsyncWebServerRequest* request) {
+      Serial.println("POST request received");
+      int params = request->params();
+      char buffer[50] = "";
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->isPost()) {
+          postRequestName[i] = p->name().c_str();
+          postRequestValue[i] = p->value().c_str();
+        }
+      }
+      // Header checking for token
+      int headers = request->headers();
+      String tempBuff = "";
+      String token = "";
+      for (int i = 0; i < headers; i++) {
+        const AsyncWebHeader* h = request->getHeader(i);
+        //if(h->name().c_str()=="ESPSESSIONID"){
+        Serial.printf("_HEADER[%s]: %s\n", h->name().c_str(), h->value().c_str());
+        
+        tempBuff = h->name().c_str();
+        //Serial.println(tempBuff);
+        if (tempBuff == "Authorization") {
+          //strcpy(tempBuffer, h->value().c_str());
+          Serial.println("Found auth header...");
+          tempBuff = h->value().c_str();
+          //Serial.println(tempBuff);
+          tempBuff.replace("Bearer ","");
+          token = tempBuff.c_str();
+          Serial.println(token);
+        }
+        //}
+      }
+      if(isTokenValid(token)) {
+        handlePostRequest(postRequestName, postRequestValue, params);
+        request->send(200, "text/plain", "Done.");
+      } else {
+        Serial.println("Token has expired");
+        request->send(401, "text/plain", "Invalid token.");
+      }
+
+      
+      //should_restart = true;
+    });
+    
+    server.on("/autenticar", HTTP_POST, [](AsyncWebServerRequest* request) {   ///Change to POST////////////////////////////////////////////////////////////////////////////////////////
+      Serial.println("POST request received");
+      int params = request->params();
+      String tryPass = "";
+      int tokenIndex = -1;
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->isPost()) {
+          if (p->name() == PARAM_INPUT_5) {
+            tryPass = p->value().c_str();
+            Serial.print("received pass is: ");
+            Serial.println(tryPass);
+          }
+        }
+      }
+      if (adminPasswordOK(tryPass)) { ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      // if (true) {     //Testing
+        tokenIndex = activateToken();
+        if(tokenIndex > -1) {
+          Serial.println("Token activated: ");
+          Serial.print(tokenValue[tokenIndex]);
+          //request->send(200, "application/json", tokenValue[tokenIndex]);
+          AsyncWebServerResponse *response = request->beginResponse(200, "application/json", tokenJsonString(tokenValue[tokenIndex]));
+          // char buffer[50] = "Bearer ";
+          // strcat(buffer, tokenValue[tokenIndex].c_str());
+          //response->addHeader("Authorization", buffer);
+	        request->send(response);
+
+        } else {
+          request->send(400, "text/plain", "No tokens available.");
+        }
+      } else {
+        request->send(401, "text/plain", "Wrong password.");
+      }
+      //request->send(400, "text/plain", "Wrong password / invalid format");
+
+    });
 
     // Set time from rtc
     if (isRTC) {
-      manualTimeSet(getEpochRTC(0));
+      manualTimeSet(getEpochRTC(gmtOffset));
     }
     server.begin();
 
-
-  } else {        // mode = 2
+  } else {        // mode = 0
     /*
     /   
     /
     */
     //"No config" AP mode
     Serial.println("Setting AP (Access Point) config mode");
-    // NULL sets an open Access Point
+    // NULL sets an open Access Point on 192.168.0.1   
+    
+    IPAddress apIP(192,168,0,1);
+    IPAddress apGateway(192,168,0,1);
+    WiFi.softAPConfig(apIP, apGateway, subnet);
     WiFi.softAP("Estación Meteorológica IoT", NULL);
 
     // Set time from rtc
-    if (isRTC) manualTimeSet(getEpochRTC(0));
+    if (isRTC) manualTimeSet(getEpochRTC(gmtOffset));
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
@@ -2926,6 +3262,7 @@ void setup() {
           if (p->name() == PARAM_INPUT_0) {
             mode = p->value().c_str();
             Serial.print("Mode set to: ");
+            if(mode == "0") mode = "2";
             Serial.println(mode);
           }
           // HTTP POST ssid value
@@ -2960,8 +3297,8 @@ void setup() {
           }
         }
       }
-      if (mode != "0" && mode != "1") {
-        //Error, mode needs to be set to either 1 or 0
+      if (mode != "2" && mode != "1") {
+        //Error, mode needs to be set to either 1 or 2
         return request->send(400, "text/plain", "Bad request, wrong mode");
       } else if (ssid == "" || admin_pass == "") {
         //Error, SSID and admin pass needs to be set
@@ -2974,7 +3311,7 @@ void setup() {
         // Serial.print("Iv generated: ");
         // Serial.println(eIv);
         // Credentials save
-        writeFileFS(LittleFS, networkConfigPath, buffer);
+        //writeFileFS(LittleFS, networkConfigPath, buffer);
         // writeFileFS(LittleFS, ivPathNetwork, eIv);
         if (isInitSD) {
           writeFileSD(SD, networkConfigPath, buffer);
@@ -2997,8 +3334,9 @@ void setup() {
           writeCharArraySD(SD, ivPathAuth, eIv, 16);
         }
       }
-      request->send(200, "text/plain", "Done. Restarting with new settings.");
       should_restart = true;
+      request->send(200, "text/plain", "Done. Restarting with new settings.");
+      
     });
     server.begin();
   }
@@ -3012,6 +3350,9 @@ void setup() {
   changeMaxPath();
   changeMinPath();
   currentDay = date.day();
+  pastYear = date.year();
+  pastMonth = date.month();
+  pastDay = date.day();
 
   // Info
   Serial.print("Current sample time: ");
@@ -3050,17 +3391,63 @@ void setup() {
 }
 
 void loop() {
+
   if (should_restart) {
     Serial.println("Rebooting...");
+    server.end();
+    // Saving all config to LittleFS on successful reboot
+    char buffer[100];
+    char boolBuffer[20];
+    char nBuffer[20];
+    // Network
+    sprintf (buffer, "%s,%s,%s,%s,%s", mode.c_str(), ssid.c_str(), pass.c_str(), ip.c_str(), gateway.c_str());
+    writeFileFS(LittleFS, networkConfigPath, buffer);
+    // Calibration
+    sprintf (buffer, "%s,%s,%s", solarRatioString.c_str(), precipRatioString.c_str(), airflowRatioString.c_str());
+    writeFileFS(LittleFS, calibrationConfigPath, buffer);
+    // Time config
+    sprintf (buffer, "%s,%s", sampleTimeString.c_str(), gmtString.c_str());
+    writeFileFS(LittleFS, timeConfigPath, buffer);
+    // Alarms
+    strcpy(buffer, "");
+    strcpy(boolBuffer, "");
+    for (int i = 0; i < 6; i++) {
+      Serial.println(i);
+      sprintf(nBuffer, "%.2f", *minReadingsLimit[i]);
+      strcat(buffer, nBuffer);
+      strcat(buffer, ",");
+      const char* tempBuffer = alarmEnabled[i] ? "1" : "0";
+      strcat(boolBuffer, tempBuffer);
+      if(i < 5) strcat(boolBuffer, ",");
+    }
+    for (int i = 0; i < 6; i++) {
+      sprintf(nBuffer, "%.2f", *maxReadingsLimit[i]);
+      strcat(buffer, nBuffer);
+      if(i < 5) strcat(buffer, ",");
+    }
+    writeFileFS(LittleFS, alarmConfigPath, buffer);
+    writeFileFS(LittleFS, enabledAlarmConfigPath, boolBuffer);
+    // Server
+    sprintf (buffer, "%s,%s", url.c_str(), port.c_str());
+    writeFileFS(LittleFS, serverConfigPath, buffer);
+
+    delay(100);
+    ESP.restart();
+  }
+
+  if (factReset) {
+    Serial.println("Settings set to default, rebooting...");
     server.end();
     delay(100);
     ESP.restart();
   }
+
   // if (alarmRTC) { 
   //   Serial.println("flag true....");
   // } else {
   //   Serial.println("flag false!");
   // }
+
   while ((isRTC && alarmRTC) || !isRTC) {
     if (!isRTC) delay(baseTime);   // Backup timer
     // Detach interrupts for comms use
@@ -3073,9 +3460,9 @@ void loop() {
 
     epochTime_2 = epochTime_1;        // Past time for computing? most likely remove
     if (isRTC) {                       // Prefer ext RTC
-      epochTime_1 = getEpochRTC(gmtOffset);    // Current time
+      epochTime_1 = getEpochRTC(gmtOffset);    // Current time in UTC
     } else {
-      epochTime_1 = getTimeEpoch(gmtOffset);     // Current time
+      epochTime_1 = getTimeEpoch(0);     // Current time 
     }
 
     // Reading sensors
@@ -3142,10 +3529,11 @@ void loop() {
       }
     }
 
-
+    // Timing control
+    realTimeC += baseTime;         // Adding +1s
+    databaseC += baseTime;
 
     // Saving readings 
-    realTimeC += baseTime;         // Adding +1s
     if ((realTimeC >= sampleTime) && isInitSD) {
       writeJsonlSD(SD, logsPath, readings, variableName, 7, epochTime_1);
       realTimeC = 0;
@@ -3174,6 +3562,7 @@ void loop() {
         writeSingleSensorSD(SD, b, *readings[i], *variableName[i + 1], epochTime_1);
       }
 
+
       // Serial.println("RTC time: ");
       // rtcPrintTime();
       // Serial.println("Local time: ");
@@ -3181,6 +3570,39 @@ void loop() {
       
       // Serial.print("Current sample time: ");
       // Serial.println(sampleTime);
+    } else if (realTimeC >= sampleTime) {   // No SD found, update backup arrays
+      int flag = 0;
+      for (int i = 0; i < 20; i++) {
+        if(backupTimestamp[i] == 0) {
+          backupTimestamp[i] = epochTime_1;
+          for (int j = 0; j < 7; j++) {
+            backupValues[i][j] = *readings[j];
+          }
+          i = 21;
+        }
+        flag++;
+      }
+      if(flag == 20) {  // No free array, remove oldest data
+        for (int i = 0; i < 19; i++) {
+          backupTimestamp[i] = backupTimestamp[i + 1];
+          for (int j = 0; j < 7; j++) {
+            backupValues[j][i] = backupValues[j][i + 1];
+          }
+        }
+        backupTimestamp[19] = epochTime_1;
+        for (int i = 0 ; i < 7; i++) {
+          backupValues[i][19] = *readings[i];
+        }
+      }
+      
+    }
+    
+    // Sending data to server
+    if ((databaseC >= databaseTimer) && isInitSD) {
+      databaseC = 0;
+      sendPostToDatabase(lastInsertTimestamp, variableName);
+    } else if (databaseC >= databaseTimer) {
+      sendPostBackup(variableName);
     }
 
     // //Calibration
@@ -3268,4 +3690,5 @@ void loop() {
     rtc.clearAlarm(1);
     ws.cleanupClients();
   }
+  
 }

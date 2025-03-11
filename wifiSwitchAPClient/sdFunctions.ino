@@ -212,7 +212,7 @@ void writeJsonlSD(fs::FS& fs, const char* path, float* values[], String* identif
     strcat(buffer, nBuffer);
     strcat(buffer, "\", \"valor\": \"");
     //strcpy(nBuffer, "");
-    sprintf(nBuffer, "%.2f", *values[i]);
+    sprintf(nBuffer, "%.3f", *values[i]);
     strcat(buffer, nBuffer);
     strcat(buffer, "\"}\n");
 
