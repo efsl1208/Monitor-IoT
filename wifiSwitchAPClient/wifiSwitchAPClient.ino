@@ -37,8 +37,50 @@
 /     34: ADC (Solar Irr)
 */
 
+// PIN definitions, etc
+#define RTCINTERRUPTPIN 15            // for consistent readings
+#define TOKEN_EXPIRE_MIN 10
+#define DHTPIN 4
+#define DHTTYPE DHT11
+#define DSBPIN 17
+#define ADCPIN 34           // ADC1_6
+#define AIRFLOWPIN 13
+// Wind Direction             pin 35 placeholder
+#define WINDNPIN 35
+#define WINDSPIN 35
+#define WINDEPIN 35
+#define WINDWPIN 35
+#define WINDNEPIN 35
+#define WINDNWPIN 35
+#define WINDSEPIN 35
+#define WINDSWPIN 35
+#define PRECIPPIN 14
 
 char bigBuffer[50400] = "";      // feels wrong
+
+// Search for parameter in HTTP methods
+const char* PARAM_INPUT_0 = "mode";
+const char* PARAM_INPUT_1 = "ssid";
+const char* PARAM_INPUT_2 = "pass";
+const char* PARAM_INPUT_3 = "ip";
+const char* PARAM_INPUT_4 = "gateway";
+const char* PARAM_INPUT_5 = "admin_pass";
+const char* PARAM_DATA_0 = "inicio";
+const char* PARAM_DATA_1 = "final";
+const char* PARAM_DATA_2 = "variable";
+const char* PARAM_DATA_3 = "frecuencia";
+const char* PARAM_CONFIG_0 = "red";
+const char* PARAM_CONFIG_1 = "calibracion";
+const char* PARAM_CONFIG_2 = "datos";
+const char* PARAM_CONFIG_3 = "alarmas";
+const char* PARAM_CONFIG_4 = "servidor";
+const char* PARAM_CONFIG_5 = "autenticacion";
+const char* PARAM_CONFIG_6 = "reset";
+const char* PARAM_SEC = "seccion";
+
+const char* anual = "anual";
+const char* monthly = "mensual";
+const char* daily = "diario";
 
 // RTC & time variables
 
@@ -47,7 +89,7 @@ int baseTime = 1000;                  // base sample time for real time measurem
 int realTimeC = 0;
 int databaseTimer = 1000 * 60 * 5;        // After n minutes have passed, tries to send data
 int databaseC = 0;
-#define RTCINTERRUPTPIN 15            // for consistent readings
+
 volatile bool alarmRTC = false;       // flag for alarm
 
 // R/W Variables
@@ -205,7 +247,7 @@ char eIvNetwork[16] = "";
 char eIvAuth[16] = ""; 
 
 // Tokens
-#define TOKEN_EXPIRE_MIN 10
+
 bool tokenActive[5] = {false};
 String tokenValue[5] = {""};
 long tokenExpire[5] = {0};
@@ -261,32 +303,24 @@ int pastYear = 1;
 int pastDay = 1;
 //int* oldestDate[3] = {&oldestYear, &oldestMonth, &oldestDay}; 
 
-// DHT definitions & config
-#define DHTPIN 4
-#define DHTTYPE DHT11
+// DHT config
 DHT dht (DHTPIN, DHTTYPE);
 // // DHT variables, should delete?
 // float dhtVar[2] = {0.0};
 
-// BME280
+// BMP280
 bool isBMP = false;
 Adafruit_BMP280 bmp;    // 0x76 address
 
 // DS18B20
-#define DSBPIN 17
 //DallasTemperature tempDSB;
 OneWire oneWire(DSBPIN);
 DallasTemperature tempDSB(&oneWire);
 
-// Solar rad measurements
-#define ADCPIN 34           // ADC1_6
 // Solar irr variables
 int intADCRead = -1;
 float solarIrr = 0.0;       // Solar irradiance index W/m^2
 
-
-// Airflow measurement
-#define AIRFLOWPIN 13
 // Airflow variables
 volatile int timesAirflowSwitch = 0;
 volatile int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
@@ -294,18 +328,6 @@ int airFlowSwitchTime = 0;
 int prevAirFlowSwitchTime = 0;
 //float airflow = 0.0;
 
-// Wind Direction             pin 35 placeholder
-#define WINDNPIN 35
-#define WINDSPIN 35
-#define WINDEPIN 35
-#define WINDWPIN 35
-#define WINDNEPIN 35
-#define WINDNWPIN 35
-#define WINDSEPIN 35
-#define WINDSWPIN 35
-
-// Precipitation measurement
-#define PRECIPPIN 14
 // Precipitation variables
 volatile int timesPrecipSwitch = 0;
 volatile int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
@@ -329,7 +351,7 @@ float* readings[7] = {&humid, &temp, &solar, &airflow, &precip, &pressure, &wind
 unsigned long backupTimestamp[20] = {0};
 float backupValues[7][20];
 
-// Variables to send data
+// Variables to send data to UI chart
 String start;
 String end;
 String sensor;
@@ -469,40 +491,15 @@ extern void saveWindDir();
 // Rain gauge
 extern float readPrecip();
 extern void savePrecip();
-// BME280
+// BMP280
 extern float readPressure();
 extern void settingsBMP();
-
-
 
 // AsyncWebServer object on port 80
 AsyncWebServer server(80);
 // Web socket
 AsyncWebSocket ws("/tiemporeal");
 
-// Search for parameter in HTTP POST request
-const char* PARAM_INPUT_0 = "mode";
-const char* PARAM_INPUT_1 = "ssid";
-const char* PARAM_INPUT_2 = "pass";
-const char* PARAM_INPUT_3 = "ip";
-const char* PARAM_INPUT_4 = "gateway";
-const char* PARAM_INPUT_5 = "admin_pass";
-const char* PARAM_DATA_0 = "inicio";
-const char* PARAM_DATA_1 = "final";
-const char* PARAM_DATA_2 = "variable";
-const char* PARAM_DATA_3 = "frecuencia";
-const char* PARAM_CONFIG_0 = "red";
-const char* PARAM_CONFIG_1 = "calibracion";
-const char* PARAM_CONFIG_2 = "datos";
-const char* PARAM_CONFIG_3 = "alarmas";
-const char* PARAM_CONFIG_4 = "servidor";
-const char* PARAM_CONFIG_5 = "autenticacion";
-const char* PARAM_CONFIG_6 = "reestablecer";
-const char* PARAM_SEC = "seccion";
-
-const char* anual = "anual";
-const char* monthly = "mensual";
-const char* daily = "diario";
 // Network variables
 IPAddress localIP;
 IPAddress localGateway;
@@ -1083,11 +1080,12 @@ void oldestDate() {
     sprintf (buffer, "%02d", i + 1);
     strcat(dayPath, buffer);
     strcat(dayPath, "_");
-    strcat(dayPath, variableName[0]->c_str());
+    strcat(dayPath, variableName[1]->c_str());
     strcat(dayPath, ".JSONL");
     oldestDay = i + 1;
     // Serial.print("found older day: ");
     // Serial.println(i + 1);
+    //Serial.println(dayPath);
     if (SD.exists(dayPath)) {
       i = 31;
     }
@@ -2116,7 +2114,10 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
       httpResponseCode = http.POST(message);
       Serial.print("HTTP Response code: ");
       Serial.println(httpResponseCode);
+      
       if(httpResponseCode < 200 || httpResponseCode > 399) {
+        Serial.println("Exiting...");
+        i = 8;
         connOK = false;
       }
     }  
@@ -2647,24 +2648,14 @@ void setup() {
 
   // SD Working indicator
   if (isInitSD) {
-    int c = 0;
-    while (c<2) {
+    int blinkC = 0;    
+    if (!SD.exists("/config")) createDirSD(SD, "/config");
+    if (!SD.exists("/misc")) createDirSD(SD, "/misc");
+    while (blinkC<2) {
       blink();
-      c++;
+      blinkC++;
     }
   }
-
-  // Credentials reading
-  // Try to read from SD
-  // if (isInitSD) {
-  //   Serial.println("reading from SD...");
-  //   rawTextLine = readFileSD(SD, credentialsPath);
-  //   Serial.println("file read...");
-  // } else {
-  //   rawTextLine = readFileFS(LittleFS, credentialsPath);    // Read from LittleFS if SD failed
-  // }
-  // // File content saved in csv_variables
-  // parse_csv(csvNetworkConfig, &rawTextLine, ",", 6);
 
   // Config reading
   if (isInitSD) {
@@ -2760,7 +2751,7 @@ void setup() {
   Serial.println(ssid);  
   // DecryptPassword
   Serial.println(pass);
-  Serial.println(ip);
+//  Serial.println(ip);
   Serial.println(gateway);
 
   // Mode = 2 AP MODE, Mode = 1 STATION MODE
@@ -3358,6 +3349,7 @@ void setup() {
   Serial.print("Current sample time: ");
   Serial.println(sampleTime);
   
+  // Setting RTC alarm
   rtc.setAlarm1(DateTime(0,0,0,0,0,1), DS3231_A1_PerSecond);
   alarmRTC = false;
   rtc.clearAlarm(1);
@@ -3384,8 +3376,8 @@ void setup() {
   
   Serial.println("Server ready!");
 
-  //Testing
-  Serial.print("Trying to send to database...");
+  // Dumping to database on startup
+  Serial.print("Trying to send readings to database...");
   sendPostToDatabase(lastInsertTimestamp, variableName);
 
 }
@@ -3539,7 +3531,7 @@ void loop() {
       realTimeC = 0;
 
       
-      // Save in individual files
+      // Save in separate files
       currentDate();
       for(int i = 0; i < 7; i++) {
         char b[60] = "";
