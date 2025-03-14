@@ -87,10 +87,12 @@ const char* daily = "diario";
 RTC_DS3231 rtc;
 int baseTime = 1000;                  // base sample time for real time measurements 
 int realTimeC = 0;
-int databaseTimer = 1000 * 60 * 5;        // After n minutes have passed, tries to send data
+int databaseTimer = 1000 * 60 * 5;    // After n minutes have passed, tries to send data
 int databaseC = 0;
 
 volatile bool alarmRTC = false;       // flag for alarm
+
+int computeTime = 0;                  // Time in ms since last measurement compute for airflow & precipitation
 
 // R/W Variables
 String rawTextLine;
@@ -2645,6 +2647,7 @@ void setup() {
   attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
   attachInterrupt(PRECIPPIN, precipISR, FALLING);
   attachInterrupt(RTCINTERRUPTPIN, rtcISR, FALLING);
+  computeTime = millis();
 
   // SD Working indicator
   if (isInitSD) {
@@ -3462,9 +3465,9 @@ void loop() {
     humid = readHumidDHT(dht);
     temp = readDSBTemp(tempDSB);
     solar = readSolarIrr(ADCPIN, solarRatio);
-    airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
+    airflow = readAirflow(ptrTimesAirflowSwitch, computeTime, airflowRatio);
     windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-    precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
+    precip = readPrecip(ptrTimesPrecipSwitch, computeTime, precipRatio);
     if (isBMP) pressure = readPressure(&bmp);
     // WebSocket sending readings
     sendMessageWS(currentReadingsString(readings, variableName, 7, epochTime_1));
@@ -3677,7 +3680,9 @@ void loop() {
     // Reattaching interrupts
     attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
     attachInterrupt(PRECIPPIN, precipISR, FALLING);
-    
+    // New start time for measurements
+    computeTime = millis();
+
     alarmRTC = false;
     rtc.clearAlarm(1);
     ws.cleanupClients();

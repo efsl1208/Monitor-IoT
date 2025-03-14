@@ -1,4 +1,4 @@
-String readWindDir(int N, int S, int E, int W, int NE, int NW, int SE, int SW){
+String readWindDir(int N, int S, int E, int W, int NE, int NW, int SE, int SW){ // TODO: Switch to degrees
   
   bool dir_nsew[4]  = {digitalRead(N),digitalRead(S),digitalRead(E),digitalRead(W)};
   bool dir_cross[4] = {digitalRead(NE),digitalRead(NW),digitalRead(SE),digitalRead(SW)};
