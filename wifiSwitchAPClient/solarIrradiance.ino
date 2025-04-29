@@ -5,6 +5,11 @@ float readSolarIrr(int adcPin, float solarIrrRatio){
   return v*solarIrrRatio;
 }
 
+float readPower(int adcPin, float ratio) {
+  int v = analogReadMilliVolts(adcPin);
+  return ( (v - 142) * (v - 142) / (1.5 * 1000) ) * ratio ;
+}
+
 void saveSolarIrr(fs::FS& fs, const char* path, unsigned long epochTime, int adcPin, float solarIrrRatio){
   char buffer[30] = "";
   appendFileSD(fs, path, "solar");

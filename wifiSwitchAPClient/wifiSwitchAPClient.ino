@@ -23,11 +23,13 @@
 
 
 /*    Pins usage
+/     0: RTC Interrupts
 /     2: Led
 /     4: DHT
 /     5: CS
-/     13: Airflow
-/     14: Precipitation
+/     8: Reboot HW
+/     15: Airflow
+/     16: Precipitation
 /     17: Temp DS18B20
 /     18: CLK/SCK
 /     19: MISO
@@ -35,20 +37,69 @@
 /     22: I2C/SCL
 /     23: MOSI
 /     34: ADC (Solar Irr)
+/     
 */
 
+// PIN definitions, etc
+#define RTCINTERRUPTPIN 13            // for consistent readings
+#define TOKEN_EXPIRE_MIN 10
+#define DHTPIN 4
+#define DHTTYPE DHT11
+#define DSBPIN 17
+#define ADCPIN 34           // ADC1_6
+#define AIRFLOWPIN 15
+#define PRECIPPIN 16
+//#define RESETPIN 8          // Connected to EN
+#define BATTERYPIN 39
+// Wind Direction             
+#define WINDNPIN 35
+#define WINDSPIN 32
+#define WINDEPIN 33
+#define WINDWPIN 25
+#define WINDNEPIN 26
+#define WINDNWPIN 27
+#define WINDSEPIN 14
+#define WINDSWPIN 12
 
-char bigBuffer[50400] = "";      // feels wrong
+
+
+char bigBuffer[25000] = "";      // feels wrong
+
+// Search for parameter in HTTP methods
+const char* PARAM_INPUT_0 = "mode";
+const char* PARAM_INPUT_1 = "ssid";
+const char* PARAM_INPUT_2 = "pass";
+const char* PARAM_INPUT_3 = "ip";
+const char* PARAM_INPUT_4 = "gateway";
+const char* PARAM_INPUT_5 = "admin_pass";
+const char* PARAM_DATA_0 = "inicio";
+const char* PARAM_DATA_1 = "final";
+const char* PARAM_DATA_2 = "variable";
+const char* PARAM_DATA_3 = "frecuencia";
+const char* PARAM_CONFIG_0 = "red";
+const char* PARAM_CONFIG_1 = "calibracion";
+const char* PARAM_CONFIG_2 = "datos";
+const char* PARAM_CONFIG_3 = "alarmas";
+const char* PARAM_CONFIG_4 = "servidor";
+const char* PARAM_CONFIG_5 = "autenticacion";
+const char* PARAM_CONFIG_6 = "reset";
+const char* PARAM_SEC = "seccion";
+
+const char* anual = "anual";
+const char* monthly = "mensual";
+const char* daily = "diario";
 
 // RTC & time variables
 
 RTC_DS3231 rtc;
 int baseTime = 1000;                  // base sample time for real time measurements 
 int realTimeC = 0;
-int databaseTimer = 1000 * 60 * 5;        // After n minutes have passed, tries to send data
+int databaseTimer = 1000 * 60 * 5;    // After n minutes have passed, tries to send data
 int databaseC = 0;
-#define RTCINTERRUPTPIN 15            // for consistent readings
+
 volatile bool alarmRTC = false;       // flag for alarm
+
+int computeTime = 0;                  // Time in ms since last measurement compute for airflow & precipitation
 
 // R/W Variables
 String rawTextLine;
@@ -123,7 +174,6 @@ String* csvTimeConfigName[2] = {&sampleTimeStringName, &gmtStringName};
 unsigned long lastInsertTimestamp = 1740801600;    //2025-03-01 YYYY-MM-DD
 WiFiClient client;
 HTTPClient http;
-
 
 String maxHumidString  = "9999";
 String maxTempString  = "9999";
@@ -205,7 +255,7 @@ char eIvNetwork[16] = "";
 char eIvAuth[16] = ""; 
 
 // Tokens
-#define TOKEN_EXPIRE_MIN 10
+
 bool tokenActive[5] = {false};
 String tokenValue[5] = {""};
 long tokenExpire[5] = {0};
@@ -243,6 +293,8 @@ bool should_restart = false;
 bool factReset = false;
 bool isInitSD = false;
 bool isRTC = false;
+int batteryLevel = 0;
+int statusC = 0;
 
 // Time variables
 const char *ntpServer = "pool.ntp.org";
@@ -261,32 +313,24 @@ int pastYear = 1;
 int pastDay = 1;
 //int* oldestDate[3] = {&oldestYear, &oldestMonth, &oldestDay}; 
 
-// DHT definitions & config
-#define DHTPIN 4
-#define DHTTYPE DHT11
+// DHT config
 DHT dht (DHTPIN, DHTTYPE);
 // // DHT variables, should delete?
 // float dhtVar[2] = {0.0};
 
-// BME280
+// BMP280
 bool isBMP = false;
 Adafruit_BMP280 bmp;    // 0x76 address
 
 // DS18B20
-#define DSBPIN 17
 //DallasTemperature tempDSB;
 OneWire oneWire(DSBPIN);
 DallasTemperature tempDSB(&oneWire);
 
-// Solar rad measurements
-#define ADCPIN 34           // ADC1_6
 // Solar irr variables
 int intADCRead = -1;
 float solarIrr = 0.0;       // Solar irradiance index W/m^2
 
-
-// Airflow measurement
-#define AIRFLOWPIN 13
 // Airflow variables
 volatile int timesAirflowSwitch = 0;
 volatile int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
@@ -294,18 +338,6 @@ int airFlowSwitchTime = 0;
 int prevAirFlowSwitchTime = 0;
 //float airflow = 0.0;
 
-// Wind Direction             pin 35 placeholder
-#define WINDNPIN 35
-#define WINDSPIN 35
-#define WINDEPIN 35
-#define WINDWPIN 35
-#define WINDNEPIN 35
-#define WINDNWPIN 35
-#define WINDSEPIN 35
-#define WINDSWPIN 35
-
-// Precipitation measurement
-#define PRECIPPIN 14
 // Precipitation variables
 volatile int timesPrecipSwitch = 0;
 volatile int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
@@ -329,7 +361,7 @@ float* readings[7] = {&humid, &temp, &solar, &airflow, &precip, &pressure, &wind
 unsigned long backupTimestamp[20] = {0};
 float backupValues[7][20];
 
-// Variables to send data
+// Variables to send data to UI chart
 String start;
 String end;
 String sensor;
@@ -449,6 +481,7 @@ extern void writeSingleSensorSD();
 extern void deleteFileSD();
 // Solar Irradiance
 extern float readSolarIrr();
+extern float readPower();
 extern void saveSolarIrr();
 // DHT
 extern float readTempDHT();
@@ -463,46 +496,21 @@ extern void saveDSBTemp();
 extern float readAirflow();
 extern void saveAirflow();
 // Wind direction
-extern String readWindDir();
-extern float readWindDirFloat();
+extern float readWindDir();
+extern float readWindDirFloat();      // depracated
 extern void saveWindDir();
 // Rain gauge
 extern float readPrecip();
 extern void savePrecip();
-// BME280
+// BMP280
 extern float readPressure();
 extern void settingsBMP();
-
-
 
 // AsyncWebServer object on port 80
 AsyncWebServer server(80);
 // Web socket
 AsyncWebSocket ws("/tiemporeal");
 
-// Search for parameter in HTTP POST request
-const char* PARAM_INPUT_0 = "mode";
-const char* PARAM_INPUT_1 = "ssid";
-const char* PARAM_INPUT_2 = "pass";
-const char* PARAM_INPUT_3 = "ip";
-const char* PARAM_INPUT_4 = "gateway";
-const char* PARAM_INPUT_5 = "admin_pass";
-const char* PARAM_DATA_0 = "inicio";
-const char* PARAM_DATA_1 = "final";
-const char* PARAM_DATA_2 = "variable";
-const char* PARAM_DATA_3 = "frecuencia";
-const char* PARAM_CONFIG_0 = "red";
-const char* PARAM_CONFIG_1 = "calibracion";
-const char* PARAM_CONFIG_2 = "datos";
-const char* PARAM_CONFIG_3 = "alarmas";
-const char* PARAM_CONFIG_4 = "servidor";
-const char* PARAM_CONFIG_5 = "autenticacion";
-const char* PARAM_CONFIG_6 = "reestablecer";
-const char* PARAM_SEC = "seccion";
-
-const char* anual = "anual";
-const char* monthly = "mensual";
-const char* daily = "diario";
 // Network variables
 IPAddress localIP;
 IPAddress localGateway;
@@ -963,6 +971,7 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
     case WS_EVT_CONNECT:
       Serial.printf ("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
       client->text(histAlarm());
+      client->text(statusBar());
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf ("WebSocket client #%u disconnected\n", client->id());
@@ -1083,11 +1092,12 @@ void oldestDate() {
     sprintf (buffer, "%02d", i + 1);
     strcat(dayPath, buffer);
     strcat(dayPath, "_");
-    strcat(dayPath, variableName[0]->c_str());
+    strcat(dayPath, variableName[1]->c_str());
     strcat(dayPath, ".JSONL");
     oldestDay = i + 1;
     // Serial.print("found older day: ");
     // Serial.println(i + 1);
+    //Serial.println(dayPath);
     if (SD.exists(dayPath)) {
       i = 31;
     }
@@ -1812,6 +1822,8 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
   switch(caseSelect) {
     case 0:
       for(int i = 0; i < requestLength; i++) {
+        Serial.println(postName[i]);
+        Serial.println(postValue[i]);
         if(postName[i] == *csvNetworkConfigName[0]) { //mode
           mode = postValue[i].c_str();
         }
@@ -1826,7 +1838,7 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
         if(postName[i] == *csvNetworkConfigName[3]) { //ip
           ip = postValue[i].c_str();
         }
-        if(postName[i] == *csvNetworkConfigName[5]) { //gateway
+        if(postName[i] == *csvNetworkConfigName[4]) { //gateway
           gateway = postValue[i].c_str();
         }
       }
@@ -2017,9 +2029,10 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
   char buffer[20] = "";
   char dataPathDate[30] = "";
   char dataPath[60] = "";
+  bool emptyMessage = true;
   // Timestamp to date
   DateTime lastInsertDate = DateTime(tempTimestamp);
-  Serial.println(tempTimestamp);
+ 
   DateTime tomorrow = DateTime(tomorrowTimestamp);
   
   int lastInsertDay = lastInsertDate.day();
@@ -2043,7 +2056,8 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
   Serial.println(currentDay);
   Serial.println(currentMonth);
   Serial.println(currentYear);
-
+  
+  Serial.println(tempTimestamp);
   Serial.println(getTimeEpoch(0-gmtOffset));
   
   while ( ( (lastInsertDay != currentDay) || (lastInsertMonth != currentMonth) || (lastInsertYear != currentYear) ) && (tempTimestamp < tomorrowTimestamp) ) {
@@ -2090,14 +2104,15 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
           splitString(group[0],individual[0],':');
 
           // Serial.println(strtoul(individual[0][1].c_str(), NULL, 0));
-          // Serial.println(lastInsertTimestamp - gmtOffset);
+          //Serial.println(timestamp - gmtOffset);
 
-          if (strtoul(individual[0][1].c_str(), NULL, 0) >= (lastInsertTimestamp - gmtOffset)) {   // >= In case the value was not saved at the time 
+          if (strtoul(individual[0][1].c_str(), NULL, 0) >= (timestamp - gmtOffset)) {   // >= In case the value was not saved at the time 
             // if (!coma && line != "") strcat(bigBuffer, ",");
             // strcat(bigBuffer, line.c_str());
             if (!coma && line != "") message += ",";
             message += line;
             coma = false;
+            emptyMessage = false;
             //Serial.println(message);
           }        
         }
@@ -2110,12 +2125,20 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
       Serial.println(message);
       coma = true;
       // Send data
-      httpResponseCode = http.POST(message);
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
-      if(httpResponseCode < 200 || httpResponseCode > 399) {
+      if(message != "[]"){
+        httpResponseCode = http.POST(message);
+        Serial.print("HTTP Response code: ");
+        Serial.println(httpResponseCode);   
+        if(httpResponseCode < 200 || httpResponseCode > 399) {
+        Serial.println("Exiting...");
+        i = 8;
         connOK = false;
+        }
+      } else {
+        emptyMessage = true;
       }
+      
+
     }  
     // Save timestamp of insert if successful
     if (connOK) {
@@ -2127,7 +2150,7 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
       sprintf(buffer, "%lu", lastInsertTimestamp);
       writeFileSD(SD, lastInsertPath, buffer);
       Serial.println("New timestamp saved");
-    } else {
+    } else if(!emptyMessage) {
       http.end();
       Serial.println("Error sending to HTTP");
       return;
@@ -2140,30 +2163,9 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {   //Te
     lastInsertMonth = lastInsertDate.month();
     lastInsertYear = lastInsertDate.year();
   }
-  //Write file to LittleFS
+
   http.end();
 
-
-  // if( < getTimeEpoch(0)) {
-
-  //   http.begin(client, (String)url + ":" + port );
-  //   //http.setReuse(false);
-  //   //http.addHeader("Authorization", (String) "Token rG5uAeglfDcyuzHDzJabXgBjiQUfDIyzDQHSQ-AK2MdOmUEeZc3Z-_df1aJw1LME6OT-dbHlcTG6SO1nu7tLPg==");
-  //   http.addHeader("Content-Type", "application/json");
-  //   String jsonArray = "[";
-  //   updateTime();
-  //   cont++;
-  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-1500) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorA\",\"valor\":0.00},";
-  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-2000) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorB\", \"valor\":0.01},";
-  //   jsonArray += "{\"t\":" + (String)getTimeEpoch(-2500) + ", \"i\": " + (String)cont + ", \"variable\":\"sensorC\", \"valor\":0.02}";
-  //   jsonArray += "]";
-  //   Serial.print("Sending: ");
-  //   Serial.println(jsonArray);
-  //   int httpResponseCode = http.POST(jsonArray);
-  //   Serial.print("HTTP Response code: ");
-  //   Serial.println(httpResponseCode);
-  //   http.end();
-  // }
 }
 
 // Sends POST using data in memory if no SD is detected
@@ -2589,17 +2591,49 @@ String decryptAES(const unsigned char* key, char* iv, const char* encrypted) {
   return output;
 }
 
+// Measures battery
+int measureBattery() {
+    return (int) (analogReadMilliVolts(BATTERYPIN) - 1500 * 1/6);
+}
+
+// Status bar String       eg: { "bateria" : "58" , "sd" : "true" }
+String statusBar() {
+  char buffer[100];
+  char nBuffer[10];
+  strcpy(buffer, "{ \"bateria\" : \"");
+  sprintf(nBuffer, "%02d", measureBattery);
+  strcat(buffer, nBuffer);
+  strcat(buffer, "\" , \"sd\" : \"");
+  // checks if SD path still exists, if not, SD is disconnected
+  if (SD.exists("/config")) {
+    strcat(buffer, "true\" }");
+    isInitSD = true;
+  } else {
+    strcat(buffer, "false\" }");
+    isInitSD = false;
+  }
+
+  Serial.print("Status bar message: ");
+  Serial.println(buffer);
+  return buffer;
+}
+
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 void setup() {
   // Serial port for debugging purposes
   Serial.begin(115200);
-
-  // Set GPIO 2 as an OUTPUT
+  SPI.begin(18, 19, 23, 5); // CLK = PIN 18, MISO = PIN 19, MOSI = PIN 23, CS = PIN 5
+  delay(200);
+  // Set pins
   pinMode(ledPin, OUTPUT);
+
+
   digitalWrite(ledPin, LOW);
 
+
   // Inits
+  delay(500);
   initSD(&isInitSD);
   dht.begin();
  
@@ -2641,27 +2675,34 @@ void setup() {
   attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
   attachInterrupt(PRECIPPIN, precipISR, FALLING);
   attachInterrupt(RTCINTERRUPTPIN, rtcISR, FALLING);
+  computeTime = millis();
+
+  // Input pins
+  pinMode(WINDNPIN, INPUT);
+  pinMode(WINDSPIN, INPUT);
+  pinMode(WINDEPIN, INPUT);
+  pinMode(WINDWPIN, INPUT);
+  pinMode(WINDNEPIN, INPUT);
+  pinMode(WINDNWPIN, INPUT);
+  pinMode(WINDSEPIN, INPUT);
+  pinMode(WINDSWPIN, INPUT);
+
+  pinMode(ADCPIN, INPUT);
+  pinMode(BATTERYPIN, INPUT);
+
+  batteryLevel = measureBattery();
+
 
   // SD Working indicator
   if (isInitSD) {
-    int c = 0;
-    while (c<2) {
+    int blinkC = 0;    
+    if (!SD.exists("/config")) createDirSD(SD, "/config");
+    if (!SD.exists("/misc")) createDirSD(SD, "/misc");
+    while (blinkC<2) {
       blink();
-      c++;
+      blinkC++;
     }
   }
-
-  // Credentials reading
-  // Try to read from SD
-  // if (isInitSD) {
-  //   Serial.println("reading from SD...");
-  //   rawTextLine = readFileSD(SD, credentialsPath);
-  //   Serial.println("file read...");
-  // } else {
-  //   rawTextLine = readFileFS(LittleFS, credentialsPath);    // Read from LittleFS if SD failed
-  // }
-  // // File content saved in csv_variables
-  // parse_csv(csvNetworkConfig, &rawTextLine, ",", 6);
 
   // Config reading
   if (isInitSD) {
@@ -2757,7 +2798,7 @@ void setup() {
   Serial.println(ssid);  
   // DecryptPassword
   Serial.println(pass);
-  Serial.println(ip);
+//  Serial.println(ip);
   Serial.println(gateway);
 
   // Mode = 2 AP MODE, Mode = 1 STATION MODE
@@ -2978,6 +3019,8 @@ void setup() {
       timeC++;
       if (timeC == 10) Serial.println("Time sync timed out...");
     }
+    if (isRTC && !getLocalTime(&timeinfoControl)) manualTimeSet(getEpochRTC(gmtOffset));
+    
     printLocalTime();
     getLocalTime(&tmstruct);
     if (isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
@@ -3213,7 +3256,7 @@ void setup() {
 
     // Set time from rtc
     if (isRTC) {
-      manualTimeSet(getEpochRTC(0));
+      manualTimeSet(getEpochRTC(gmtOffset));
     }
     server.begin();
 
@@ -3232,7 +3275,7 @@ void setup() {
     WiFi.softAP("Estación Meteorológica IoT", NULL);
 
     // Set time from rtc
-    if (isRTC) manualTimeSet(getEpochRTC(0));
+    if (isRTC) manualTimeSet(getEpochRTC(gmtOffset));
 
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
@@ -3306,7 +3349,7 @@ void setup() {
         // Serial.print("Iv generated: ");
         // Serial.println(eIv);
         // Credentials save
-        writeFileFS(LittleFS, networkConfigPath, buffer);
+        //writeFileFS(LittleFS, networkConfigPath, buffer);
         // writeFileFS(LittleFS, ivPathNetwork, eIv);
         if (isInitSD) {
           writeFileSD(SD, networkConfigPath, buffer);
@@ -3345,11 +3388,15 @@ void setup() {
   changeMaxPath();
   changeMinPath();
   currentDay = date.day();
+  pastYear = date.year();
+  pastMonth = date.month();
+  pastDay = date.day();
 
   // Info
   Serial.print("Current sample time: ");
   Serial.println(sampleTime);
   
+  // Setting RTC alarm
   rtc.setAlarm1(DateTime(0,0,0,0,0,1), DS3231_A1_PerSecond);
   alarmRTC = false;
   rtc.clearAlarm(1);
@@ -3376,9 +3423,9 @@ void setup() {
   
   Serial.println("Server ready!");
 
-  //Testing
-  Serial.print("Trying to send to database...");
-  sendPostToDatabase(lastInsertTimestamp, variableName);
+  // Dumping to database on startup
+  Serial.print("Trying to send readings to database...");
+  if(isInitSD) sendPostToDatabase(lastInsertTimestamp, variableName);
 
 }
 
@@ -3424,6 +3471,7 @@ void loop() {
     writeFileFS(LittleFS, serverConfigPath, buffer);
 
     delay(100);
+    // digitalWrite(RESETPIN, LOW);
     ESP.restart();
   }
 
@@ -3431,6 +3479,7 @@ void loop() {
     Serial.println("Settings set to default, rebooting...");
     server.end();
     delay(100);
+    // digitalWrite(RESETPIN, LOW);
     ESP.restart();
   }
 
@@ -3452,19 +3501,26 @@ void loop() {
 
     epochTime_2 = epochTime_1;        // Past time for computing? most likely remove
     if (isRTC) {                       // Prefer ext RTC
-      epochTime_1 = getEpochRTC(gmtOffset);    // Current time
+      epochTime_1 = getEpochRTC(gmtOffset);    // Current time in UTC
     } else {
-      epochTime_1 = getTimeEpoch(0);     // Current time
+      epochTime_1 = getTimeEpoch(0);     // Current time 
     }
+
+    // Status bar, battery + sd connected
+    statusC ++;
+    if(statusC >= 30) {
+      sendMessageWS(statusBar());
+      statusC = 0;
+    } 
 
     // Reading sensors
     //tempDHT = readTemp();
     humid = readHumidDHT(dht);
     temp = readDSBTemp(tempDSB);
-    solar = readSolarIrr(ADCPIN, solarRatio);
-    airflow = readAirflow(ptrTimesAirflowSwitch, sampleTime, airflowRatio);
-    windDir = readWindDirFloat(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-    precip = readPrecip(ptrTimesPrecipSwitch, sampleTime, precipRatio);
+    solar = readPower(ADCPIN, solarRatio);
+    airflow = readAirflow(ptrTimesAirflowSwitch, computeTime, airflowRatio);
+    windDir = readWindDir(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
+    precip = readPrecip(ptrTimesPrecipSwitch, computeTime, precipRatio);
     if (isBMP) pressure = readPressure(&bmp);
     // WebSocket sending readings
     sendMessageWS(currentReadingsString(readings, variableName, 7, epochTime_1));
@@ -3531,7 +3587,7 @@ void loop() {
       realTimeC = 0;
 
       
-      // Save in individual files
+      // Save in separate files
       currentDate();
       for(int i = 0; i < 7; i++) {
         char b[60] = "";
@@ -3562,6 +3618,26 @@ void loop() {
       
       // Serial.print("Current sample time: ");
       // Serial.println(sampleTime);
+
+      // Compute averages to keep updated data
+      for(int i = 0; i < 6; i++) {
+        char b[60] = "";
+        strcpy(b, datePath);
+        strcat(b, "/");
+        currentDate();
+        strcat(b, currentDateChar);
+        strcat(b, "_");
+        strcat(b, variableName[i+1]->c_str());
+        strcat(b, ".JSONL");
+        dailyAverage(b);
+      }
+      if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);       // File was used to compute this month's values'
+      writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), date.day()));
+
+      monthlyAverage(date.year(), date.month());
+      if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+      writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
+
     } else if (realTimeC >= sampleTime) {   // No SD found, update backup arrays
       int flag = 0;
       for (int i = 0; i < 20; i++) {
@@ -3677,7 +3753,9 @@ void loop() {
     // Reattaching interrupts
     attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
     attachInterrupt(PRECIPPIN, precipISR, FALLING);
-    
+    // New start time for measurements
+    computeTime = millis();
+
     alarmRTC = false;
     rtc.clearAlarm(1);
     ws.cleanupClients();
