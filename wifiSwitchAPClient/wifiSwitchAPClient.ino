@@ -19,6 +19,8 @@
 #include "mbedtls/aes.h"
 #include "mbedtls/ctr_drbg.h"
 #include <HTTPClient.h>
+// #include "miniz.h"
+// #include "miniz.c"
 //#include <ESP32_MySQL.h>
 
 
@@ -62,8 +64,10 @@
 #define WINDSWPIN 12
 
 
-
-char bigBuffer[25000] = "";      // feels wrong
+// Buffers & compression
+char bigBuffer[25000] = "";      
+// static unsigned char *winBuffer[1024];
+// TampCompressor compressor;
 
 // Search for parameter in HTTP methods
 const char* PARAM_INPUT_0 = "mode";
@@ -84,6 +88,10 @@ const char* PARAM_CONFIG_4 = "servidor";
 const char* PARAM_CONFIG_5 = "autenticacion";
 const char* PARAM_CONFIG_6 = "reset";
 const char* PARAM_SEC = "seccion";
+const char* PARA_DL_0 = "anio";
+const char* PARA_DL_1 = "mes";
+const char* PARA_DL_2 = "dia";
+const char* PARA_DL_3 = "variable";
 
 const char* anual = "anual";
 const char* monthly = "mensual";
@@ -366,6 +374,15 @@ String start;
 String end;
 String sensor;
 String frequency;
+
+// Download variables
+String yearDL;
+String monthDL;
+String dayDL;
+String varDL;
+int monthIntDL = -1;
+int dayIntDL = -1;
+bool isParamDL[4] = {false};
 
 // Max readings
 float maxTempDHT = -100;
@@ -2596,14 +2613,14 @@ int measureBattery() {
     return (int) (analogReadMilliVolts(BATTERYPIN) - 1500 * 1/6);
 }
 
-// Status bar String       eg: { "bateria" : "58" , "sd" : "true" }
+// Status bar String       eg: { "bateria" : "58" , "almacenamiento" : "true" }
 String statusBar() {
   char buffer[100];
   char nBuffer[10];
   strcpy(buffer, "{ \"bateria\" : \"");
   sprintf(nBuffer, "%02d", measureBattery);
   strcat(buffer, nBuffer);
-  strcat(buffer, "\" , \"sd\" : \"");
+  strcat(buffer, "\" , \"almacenamiento\" : \"");
   // checks if SD path still exists, if not, SD is disconnected
   if (SD.exists("/config")) {
     strcat(buffer, "true\" }");
@@ -2617,6 +2634,30 @@ String statusBar() {
   Serial.println(buffer);
   return buffer;
 }
+
+// // File compression
+// void compressFile(String year, String month, String day) {
+//   String outputPath = year + "-" + month + "-" + day + ".zip";
+//   Serial.println("Date values received: ");
+//   Serial.println(year);
+//   Serial.println(month);
+//   Serial.println(day);
+
+//   // zip writer init
+//   Serial.print("Starting zip writer...");
+//   mz_bool* zipWriter = mz_zip_writer_init(outputPath, 0);
+//   if(!zipWriter) return;
+//   Serial.println("zip writer OK");
+
+//   // Adding files to the zip archive
+//   for(int i = 0; i < 6; i++) {
+//     String fileToAdd =  year + "-" + month + "-" + day + "_" + *variableName[i+1] + ".JSONL";
+//     Serial.print("Trying to add file: ");
+//     Serial.print()
+//   }
+
+// }
+
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -2791,6 +2832,7 @@ void setup() {
   Serial.print("admin_pass re-encrypted to: ");
   Serial.println(admin_pass);
 
+
   ////////////////////////////////////////////////////////////////////////////////////////////
   if (mode == "") mode = "0";  //2 -> AP Mode, 1 -> STA Mode, 0 -> No config.
 
@@ -2798,7 +2840,7 @@ void setup() {
   Serial.println(ssid);  
   // DecryptPassword
   Serial.println(pass);
-//  Serial.println(ip);
+  //  Serial.println(ip);
   Serial.println(gateway);
 
   // Mode = 2 AP MODE, Mode = 1 STATION MODE
@@ -2808,6 +2850,8 @@ void setup() {
     /
     */
     //STATION Mode
+
+    //WebSocket
     initWS();
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -2856,6 +2900,64 @@ void setup() {
 
       request->send(200, "application/json", sensorData(start, end, sensor, frequency));
       //esp_task_wdt_reset();
+    });
+
+    server.on("/datos/descargar", HTTP_GET, [](AsyncWebServerRequest* request) {
+      int params = request->params();
+      String downloadPath = "";
+
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->name() == PARAM_DL_0) {
+          yearDL = p->value().c_str();
+          Serial.print("Year: ");
+          Serial.println(yearDL);
+          isParamDL[0] = true;
+        }
+        // HTTP GET end time
+        if (p->name() == PARAM_DL_1) {
+          monthDL = p->value().c_str();
+          monthIntDL = atoi(monthDL);
+          Serial.print("Month: ");
+          Serial.println(monthDL);
+          isParamDL[1] = true;
+        }
+        // HTTP GET sensor name
+        if (p->name() == PARAM_DL_2) {
+          dayDL = p->value().c_str();
+          dayIntDL = atoi(dayDL);
+          Serial.print("Day: ");
+          Serial.println(dayDL);
+          isParamDL[2] = true;
+        }
+        // HTTP GET frequency
+        if (p->name() == PARAM_DL_3) {
+          varDL = p->value().c_str();
+          Serial.print("Variable selected: ");
+          Serial.println(varDL);
+          isParamDL[3] = true;
+        }
+      }
+
+      // Day
+      if(isParamDL[2]) {
+        downloadPath = "/" + yearDL + "/" + monthIntDL + "/" + yearDL + "-" + monthDL + "-" + dayDL + "_" + varDL + ".JSONL";
+      }
+      // Month
+      if(isParamDL[1] && !isParamDL[2]) {
+        downloadPath = "/" + yearDL + "/" + yearDL + "-" + monthDL + "_monthAvg.JSONL";
+      }
+      // Year
+      if(!isParamDL[1]) {
+        Serial.println("Year averages are not saved...");
+        downloadPath = "";
+      }
+
+      if(downloadPath = "") {
+        request->send(401, "plain/text", "File not found");
+      } else {
+        request->send(SD, downloadPath, "text/text", true);
+      }
     });
 
     server.on("/config", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -3028,7 +3130,7 @@ void setup() {
     server.begin();
 
 
-  } else if (mode == "2") {
+  } else if (mode == "2" || !initWiFi()) {
     /*
     /
     /
@@ -3053,6 +3155,8 @@ void setup() {
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
     Serial.println(IP);
+
+
 
     // Websocket
     initWS();
@@ -3103,6 +3207,64 @@ void setup() {
 
       request->send(200, "application/json", sensorData(start, end, sensor, frequency));
       //esp_task_wdt_reset();
+    });
+
+    server.on("/datos/descargar", HTTP_GET, [](AsyncWebServerRequest* request) {
+      int params = request->params();
+      String downloadPath = "";
+
+      for (int i = 0; i < params; i++) {
+        const AsyncWebParameter* p = request->getParam(i);
+        if (p->name() == PARAM_DL_0) {
+          yearDL = p->value().c_str();
+          Serial.print("Year: ");
+          Serial.println(yearDL);
+          isParamDL[0] = true;
+        }
+        // HTTP GET end time
+        if (p->name() == PARAM_DL_1) {
+          monthDL = p->value().c_str();
+          monthIntDL = atoi(monthDL);
+          Serial.print("Month: ");
+          Serial.println(monthDL);
+          isParamDL[1] = true;
+        }
+        // HTTP GET sensor name
+        if (p->name() == PARAM_DL_2) {
+          dayDL = p->value().c_str();
+          dayIntDL = atoi(dayDL);
+          Serial.print("Day: ");
+          Serial.println(dayDL);
+          isParamDL[2] = true;
+        }
+        // HTTP GET frequency
+        if (p->name() == PARAM_DL_3) {
+          varDL = p->value().c_str();
+          Serial.print("Variable selected: ");
+          Serial.println(varDL);
+          isParamDL[3] = true;
+        }
+      }
+
+      // Day
+      if(isParamDL[2]) {
+        downloadPath = "/" + yearDL + "/" + monthIntDL + "/" + yearDL + "-" + monthDL + "-" + dayDL + "_" + varDL + ".JSONL";
+      }
+      // Month
+      if(isParamDL[1] && !isParamDL[2]) {
+        downloadPath = "/" + yearDL + "/" + yearDL + "-" + monthDL + "_monthAvg.JSONL";
+      }
+      // Year
+      if(!isParamDL[1]) {
+        Serial.println("Year averages are not saved...");
+        downloadPath = "";
+      }
+
+      if(downloadPath = "") {
+        request->send(401, "plain/text", "File not found");
+      } else {
+        request->send(SD, downloadPath, "text/text", true);
+      }
     });
 
     server.on("/config", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -3281,6 +3443,8 @@ void setup() {
     Serial.print("AP IP address: ");
     Serial.println(IP);
 
+
+
     // Web Server Root URL
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
       request->send(LittleFS, "/setup/setup.html", "text/html");
@@ -3421,12 +3585,18 @@ void setup() {
   if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
   writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
   
-  Serial.println("Server ready!");
-
   // Dumping to database on startup
   Serial.print("Trying to send readings to database...");
   if(isInitSD) sendPostToDatabase(lastInsertTimestamp, variableName);
+  
+  // Compressor init
+  // TampConf compConf = {.window = 10, .literal = 8, .use_custom_dictionary = false};
+  // tamp_compressor_init(&compressor, &compConf, winBuffer);
+  
 
+
+
+  Serial.println("Server ready!");
 }
 
 void loop() {
