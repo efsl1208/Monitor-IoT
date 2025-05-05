@@ -88,10 +88,10 @@ const char* PARAM_CONFIG_4 = "servidor";
 const char* PARAM_CONFIG_5 = "autenticacion";
 const char* PARAM_CONFIG_6 = "reset";
 const char* PARAM_SEC = "seccion";
-const char* PARA_DL_0 = "anio";
-const char* PARA_DL_1 = "mes";
-const char* PARA_DL_2 = "dia";
-const char* PARA_DL_3 = "variable";
+const char* PARAM_DL_0 = "anio";
+const char* PARAM_DL_1 = "mes";
+const char* PARAM_DL_2 = "dia";
+const char* PARAM_DL_3 = "variable";
 
 const char* anual = "anual";
 const char* monthly = "mensual";
@@ -108,7 +108,10 @@ int databaseC = 0;
 volatile bool alarmRTC = false;       // flag for alarm
 
 int computeTime = 0;                  // Time in ms since last measurement compute for airflow & precipitation
-unsigned long reconnectInt = 120000; 
+
+unsigned long currentMillisDC;
+unsigned long prevMillisDC;
+unsigned long reconnectInt = 120000;  // 2 mins
 int reconnectCounter = 0;
 
 // R/W Variables
@@ -2913,7 +2916,7 @@ void setup() {
         // HTTP GET end time
         if (p->name() == PARAM_DL_1) {
           monthDL = p->value().c_str();
-          monthIntDL = atoi(monthDL);
+          monthIntDL = atoi(monthDL.c_str());
           Serial.print("Month: ");
           Serial.println(monthDL);
           isParamDL[1] = true;
@@ -2921,7 +2924,7 @@ void setup() {
         // HTTP GET sensor name
         if (p->name() == PARAM_DL_2) {
           dayDL = p->value().c_str();
-          dayIntDL = atoi(dayDL);
+          dayIntDL = atoi(dayDL.c_str());
           Serial.print("Day: ");
           Serial.println(dayDL);
           isParamDL[2] = true;
@@ -3145,24 +3148,27 @@ void setup() {
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
 
-    IPAddress apIP(192,168,0,1);
-    IPAddress apGateway(192,168,0,1);
-    WiFi.softAPConfig(apIP, apGateway, subnet);
+    // IPAddress apIP(192,168,0,1);
+    // IPAddress apGateway(192,168,0,1);
+    // WiFi.softAPConfig(apIP, apGateway, subnet);
+    localIP.fromString(ip.c_str());
+    localGateway.fromString(gateway.c_str());
+    WiFi.softAPConfig(localIP, localGateway, subnet);
     Serial.print("AP password: ");
     Serial.println(pass);
     if (pass != "\"NULL\"") {
       WiFi.softAP(ssid.c_str(), pass.c_str()); 
     } else {
       WiFi.softAP(ssid.c_str(), NULL);
-      pass = "";
-      ip = "192.168.0.1";
-      gateway = "192.168.0.1";
+      // pass = "";
+      // ip = "192.168.0.1";
+      // gateway = "192.168.0.1";
     }
     IPAddress IP = WiFi.softAPIP();
     Serial.print("AP IP address: ");
     Serial.println(IP);
 
-    // Set time from rtc
+    // Set time from rtc, no internet connection
     if (isRTC) {
       manualTimeSet(getEpochRTC(gmtOffset));
     }
@@ -3348,49 +3354,59 @@ void setup() {
 void loop() {
 
   // Wireless checks
-  if(WiFi.status() != WL_CONNECTED) {
+  if(WiFi.status() != WL_CONNECTED && mode == "1") {    // is on STA mode
     Serial.println("Connection lost, trying to reconnect...");
-    unsigned long currentMillisDC = millis();
-    unsigned long prevMillisDC = 0;
-
+    currentMillisDC = millis();
+    
+    // Tries to reconnect after 2 min interval, up to 10 times
     if(reconnectCounter < 10 && (currentMillisDC - prevMillisDC >= reconnectInt)) {
       WiFi.disconnect();
       WiFi.reconnect();
+      prevMillisDC = currentMillisDC;
       reconnectCounter++;
     }
 
-    if reconnect fails, start AP, try to reconnect every hour or so
-    if(reconnectCounter >= 10) {
-      Serial.println("failed to reconnect over 10 times, try every hour to reconnect");
-      reconnectInt = 1800000;
+    //if reconnect fails, start AP, try to reconnect every hour or so
+    if(reconnectCounter >= 10 && currentMillisDC - prevMillisDC >= reconnectInt) {
+      Serial.println("failed to reconnect over 10 times, try increasing intervals up to every 30 mins to reconnect...");
+      if(reconnectInt < 1800000) {
+        reconnectInt = reconnectInt * + 120000;
+      } else {
+        reconnectInt = 1800000;
+      }
       server.end();
       WiFi.disconnect();
       
+      // Try to init wifi and connect
       if(!initWiFi()) {
-
         // AP Mode
-        Serial.println("Setting AP (Access Point)");
-        // NULL sets an open Access Point
-
-        IPAddress apIP(192,168,0,1);
-        IPAddress apGateway(192,168,0,1);
-        WiFi.softAPConfig(apIP, apGateway, subnet);
-        Serial.print("AP password: ");
-        Serial.println(pass);
-        if (pass != "\"NULL\"") {
-          WiFi.softAP(ssid.c_str(), pass.c_str()); 
-        } else {
-          WiFi.softAP(ssid.c_str(), NULL);
-          pass = "";
-          ip = "192.168.0.1";
-          gateway = "192.168.0.1";
-        }
+        Serial.println("Setting backup AP (Access Point)");
+        // Creting AP with same settings as network connected to:
+        localIP.fromString(ip.c_str());
+        localGateway.fromString(gateway.c_str());
+        WiFi.softAPConfig(localIP, localGateway, subnet);
+        Serial.print("AP password changed to admin pass: ");
+        Serial.println(admin_pass);
+        String ssid_backup = ssid + "_backup";
+        WiFi.softAP(ssid_backup.c_str(), admin_pass.c_str()); 
+        // Printing address
         IPAddress IP = WiFi.softAPIP();
         Serial.print("AP IP address: ");
         Serial.println(IP);
+        reconnectCounter++;
       }
-
+      server.begin();
     }
+
+    // Restarting ESP after 12+ hrs, might be another error 
+    if(reconnectCounter > 60) {
+      Serial.println("Failed to reconnect after 12+ hours, rebooting...");
+      should_restart = true;
+    }
+
+  } else {
+    // Connection OK
+    reconnectCounter = 0;
   }
 
   if (should_restart) {
