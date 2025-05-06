@@ -3156,8 +3156,12 @@ void setup() {
     WiFi.softAPConfig(localIP, localGateway, subnet);
     Serial.print("AP password: ");
     Serial.println(pass);
+    String ssidAP = ssid + "_ESP-AP";
+    Serial.print("SSID set to: ");
+    Serial.println(ssidAP);
+	  
     if (pass != "\"NULL\"") {
-      WiFi.softAP(ssid.c_str(), pass.c_str()); 
+      WiFi.softAP(ssidAP.c_str(), pass.c_str()); 
     } else {
       WiFi.softAP(ssid.c_str(), NULL);
       // pass = "";
