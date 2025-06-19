@@ -160,6 +160,7 @@ unsigned long lastInsertTimestamp = 1740801600;    //2025-03-01 YYYY-MM-DD -- DE
 WiFiClient client;
 HTTPClient http;
 
+// Alarm variables
 String maxHumidString  = "9999";
 String maxTempString  = "9999";
 String maxSolarString  = "9999";
@@ -232,7 +233,6 @@ char eIvNetwork[16] = "";
 char eIvAuth[16] = ""; 
 
 // Tokens
-
 bool tokenActive[5] = {false};
 String tokenValue[5] = {""};
 long tokenExpire[5] = {0};
@@ -273,7 +273,7 @@ bool isRTC = false;
 int batteryLevel = 0;
 int statusC = 0;
 
-// Time variables
+// Date variables
 const char *ntpServer = "pool.ntp.org";
 const char *ntpServer1 = "time.nist.gov";
 unsigned long epochTime_1 = 0;
@@ -305,14 +305,14 @@ int intADCRead = -1;
 float solarIrr = 0.0;       // Solar irradiance index W/m^2
 
 // Airflow variables
-volatile int timesAirflowSwitch = 0;
-volatile int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
+int timesAirflowSwitch = 0;
+int* ptrTimesAirflowSwitch = &timesAirflowSwitch;
 int airFlowSwitchTime = 0;
 int prevAirFlowSwitchTime = 0;
 
 // Precipitation variables
-volatile int timesPrecipSwitch = 0;
-volatile int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
+int timesPrecipSwitch = 0;
+int* ptrTimesPrecipSwitch = &timesPrecipSwitch;
 int precipSwitchTime = 0;
 int prevPrecipSwitchTime = 0;
 
@@ -452,27 +452,18 @@ extern void writeJsonlSDDebug();
 extern void writeSingleSensorSD();
 extern void deleteFileSD();
 // Solar Irradiance
-extern float readSolarIrr();          //Unused
 extern float readPower();
-extern void saveSolarIrr();           //Unused
 // DHT
 extern float readTempDHT();
 extern float readHumidDHT();
-extern void saveTemp();               //Unused
-extern void saveHumid();              //Unused
 // DS18B200
 extern float readDSBTemp();
-extern void saveDSBTemp();            //Unused
 // Airflow
 extern float readAirflow();
-extern void saveAirflow();            //Unused
 // Wind direction
 extern float readWindDir();
-extern float readWindDirFloat();      //Unused
-extern void saveWindDir();            //Unused
 // Rain gauge
 extern float readPrecip();
-extern void savePrecip();             //Unused
 // BMP280
 extern float readPressure();
 extern void settingsBMP();        
@@ -492,10 +483,16 @@ IPAddress dns(8,8,8,8);
 unsigned long previousMillis = 0;
 const long interval = 10000;  // interval to wait for Wi-Fi connection (milliseconds)
 
-// Set LED GPIO
-const int ledPin = 2;
-// Stores LED state
-String ledState = "OFF";
+// Power variables
+const int panelControlPin = 2;
+bool isPanelDisconnected = true;
+float powerRatio = 1.0;
+const char* solarControlPath = "/config/panel.conf";
+int powerC = 0;
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+// Functions
 
 // Parse values of text_vars as CSV text
 void parse_csv(String* text_vars[], String* csv, char* del, int qty) {
@@ -882,7 +879,8 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client, AwsEventType 
     case WS_EVT_CONNECT:
       Serial.printf ("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
       client->text(histAlarm());
-      client->text(statusBar());
+      client->text(statusBarBattery());
+      client->text(statusBarStorage());
       break;
     case WS_EVT_DISCONNECT:
       Serial.printf ("WebSocket client #%u disconnected\n", client->id());
@@ -1026,13 +1024,6 @@ String oldestDateString() {
   return oldest;
 }
 
-void blink() {
-  digitalWrite(ledPin, HIGH);
-  delay(1000);
-  digitalWrite(ledPin, LOW);
-  delay(1000);
-}
-
 // Change date path, "YY/MM/..."
 void changeDatePath() {
   char buffer[30] = "";
@@ -1106,7 +1097,6 @@ void currentMonth() {
 
 // Changes logs path, .../YYYY-MM-DD.JSONL
 void changeLogsPath() {
-  //DateTime dateYMD = DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec);
   char buffer[5] = "";    //"YYYY-MM-DD"
   strcpy(logsPath, datePath);
   strcat(logsPath, "/");
@@ -1280,11 +1270,7 @@ void monthlyAverage(int year, int month) {      // /YYYY/MM/YYYY-MM-    dd_avg.J
       nReadings[i] = 0;
     } 
   } 
-
   Serial.print("Monthly averages computed..."); 
-
-
-
 }
 
 // Computes average from SD data
@@ -1295,13 +1281,10 @@ void dailyAverage(char* path) {
     return;
   }
   String line = "init";
-  
-
   for(int i = 0; i < 7; i++) {
     cReadings[i] = 0;
     nReadings[i] = 0;
   }  
-  
   while (!(line == "")) {
     String group[5];
     String individual[5][5];
@@ -1311,7 +1294,6 @@ void dailyAverage(char* path) {
     for(int i = 0; i < 3; i++) {
       splitString(group[i],individual[i],':');
     }
-
     for(int i = 0; i < 7; i++) {
       if (individual[1][1] == *variableName[i + 1]) {
         nReadings[i]++;
@@ -1319,16 +1301,12 @@ void dailyAverage(char* path) {
       }
     }
   }
-
   for(int i = 0; i < 7; i++) {
     if (nReadings[i] > 0) {
       *avgReadings[i] = cReadings[i]/nReadings[i];
       nReadings[i] = 0;
     } 
   }  
-  
-
-
   Serial.print("Averages computed..."); 
   file.close();
 }
@@ -1337,20 +1315,16 @@ void dailyAverage(char* path) {
 String sensorData(String startTime, String endTime, String variable, String frequency) {      
   String dataString = "";
   String line = "init";
-
   char pathBuffer[40] = "";
-  char dBuffer[10] = "";
-  
+  char dBuffer[10] = ""; 
   bool coma = false;
-  
   // Timestamp to date
   DateTime selectedDate = DateTime(strtoul(startTime.c_str(), NULL, 0));
   Serial.println(strtoul(startTime.c_str(), NULL, 0));
-  
   int selectedDay = selectedDate.day();
   int selectedMonth = selectedDate.month();
   int selectedYear = selectedDate.year();
-  
+
   strcpy(pathBuffer, "/");
   sprintf (dBuffer, "%d", selectedYear);
   strcat(pathBuffer, dBuffer);
@@ -1373,13 +1347,11 @@ String sensorData(String startTime, String endTime, String variable, String freq
       sprintf (dBuffer, "%02d", i);
       strcat(yearPathBuffer, dBuffer);
       strcat(yearPathBuffer, "_monthAvg.JSONL");
-
       if (SD.exists(yearPathBuffer)) {
         File file = SD.open(yearPathBuffer);
         if (!file) {
           Serial.println("Failed to open file to send anual data...");
         }
-
         while (!(line == "")) {
           String group[5];
           String individual[5][5];
@@ -1389,7 +1361,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
           for(int i = 0; i < 3; i++) {
             splitString(group[i],individual[i],':');
           }
-
           if (individual[1][1] == variable) {   // Checks for selected variable
             if (!coma) {
               strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
@@ -1399,17 +1370,14 @@ String sensorData(String startTime, String endTime, String variable, String freq
             coma = false;
           }
         }
-        esp_task_wdt_reset();
-        
+        esp_task_wdt_reset();       
         file.close();
-      }
-      
+      }      
     }
     strcat(bigBuffer, "]}");
     Serial.print("Big buffer anual: ");
     Serial.println(bigBuffer); 
-  }
-  
+  } 
 
   // Fetch all values for a specified date
   if (frequency == daily) {
@@ -1425,7 +1393,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
     strcat(pathBuffer, "_");
     strcat(pathBuffer, variable.c_str());
     strcat(pathBuffer, ".JSONL");
-
     Serial.println(pathBuffer);
 
     File file = SD.open(pathBuffer);
@@ -1444,7 +1411,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
       for(int i = 0; i < 3; i++) {
         splitString(group[i],individual[i],':');
       }
-
       if (individual[1][1] == variable) {   // Checks for selected variable
         if (!coma) {
           strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
@@ -1457,7 +1423,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
     }
     strcat(bigBuffer, "]}"); 
     file.close();
-
   } else if (frequency == monthly) {
 
     strcat(pathBuffer, "/");
@@ -1484,7 +1449,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
         if (!file) {
           Serial.println("Failed to open file to send monthly data...");
         }
-
         while (!(line == "")) {
           String group[5];
           String individual[5][5];
@@ -1494,7 +1458,6 @@ String sensorData(String startTime, String endTime, String variable, String freq
           for(int i = 0; i < 3; i++) {
             splitString(group[i],individual[i],':');
           }
-
           if (individual[1][1] == variable) {   // Checks for selected variable
             if (!coma) {
               strcat(bigBuffer, ",");            // if there is no coma before new data, prints one
@@ -1504,14 +1467,12 @@ String sensorData(String startTime, String endTime, String variable, String freq
             coma = false;
           }
         }
-        esp_task_wdt_reset();
-        
+        esp_task_wdt_reset();        
         file.close();
       }
     }
     strcat(bigBuffer, "]}"); 
   }
-
   Serial.print("Data read...");
   return bigBuffer;
 }
@@ -1561,7 +1522,7 @@ void handlePostRequest(String postName[], String postValue[], int requestLength)
         if(postName[i] == *csvNetworkConfigName[1]) { //ssid
           ssid = postValue[i].c_str();
         }
-        if(postName[i] == *csvNetworkConfigName[2]) { //pass/////////////////////////////////////////////////////////////////////////////////////////////////
+        if(postName[i] == *csvNetworkConfigName[2]) { //pass
           pass = postValue[i].c_str();
           if(pass == "") pass = "\"NULL\"";
         }
@@ -1760,18 +1721,6 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {
   http.addHeader("Content-Type", "application/json");
 
   int httpResponseCode = 500;
-
-  //Troubleshooting
-  Serial.println(lastInsertDay);
-  Serial.println(lastInsertMonth);
-  Serial.println(lastInsertYear);
-
-  Serial.println(currentDay);
-  Serial.println(currentMonth);
-  Serial.println(currentYear);
-  
-  Serial.println(tempTimestamp);
-  Serial.println(getTimeEpoch(0-gmtOffset));
   
   while ( ( (lastInsertDay != currentDay) || (lastInsertMonth != currentMonth) || (lastInsertYear != currentYear) ) && (tempTimestamp < tomorrowTimestamp) ) {
     // Prepare path
@@ -1802,7 +1751,8 @@ void sendPostToDatabase(unsigned long timestamp, String* identifier[])  {
       File file = SD.open(dataPath);
       if (!file) {
         Serial.println("Failed to open file to fetch data...");
-        //return "";
+        http.end();
+        return;
       } else {
         while (line != "") {
           String group[5];
@@ -2074,7 +2024,7 @@ void printLocalTime() {
 // Airflow interrupt
 void IRAM_ATTR airflowISR() {
   airFlowSwitchTime = millis();
-  if (airFlowSwitchTime - prevAirFlowSwitchTime > 100) {
+  if (airFlowSwitchTime - prevAirFlowSwitchTime > 125) {
     timesAirflowSwitch++;
     prevAirFlowSwitchTime = airFlowSwitchTime;
   }
@@ -2082,7 +2032,7 @@ void IRAM_ATTR airflowISR() {
 // Precipitation interrupt
 void IRAM_ATTR precipISR() {
   precipSwitchTime = millis();
-  if (precipSwitchTime - prevPrecipSwitchTime > 100) {
+  if (precipSwitchTime - prevPrecipSwitchTime > 200) {
     timesPrecipSwitch++;
     prevPrecipSwitchTime = precipSwitchTime;
   }
@@ -2218,8 +2168,8 @@ void decryptAES(const unsigned char* key, char* iv, const char* encrypted, char*
 
   Serial.print("Message decrypted...");
   Serial.println(output);
-
 }
+
 // Returns String
 String decryptAES(const unsigned char* key, char* iv, const char* encrypted) {
   strcpy(encryptedMessage, (const char*)encrypted);
@@ -2244,29 +2194,73 @@ String decryptAES(const unsigned char* key, char* iv, const char* encrypted) {
 
 // Measures battery
 int measureBattery() {
-    return (int) (analogReadMilliVolts(BATTERYPIN) - 1500 * 1/6);
+  int v = 0;
+  for (int i = 0; i < 5; i++) {
+    v = v + analogReadMilliVolts(BATTERYPIN);
+    delay(10);
+  }
+  v = v / 5;
+  return (int) ((v - 1500) * 1/6);
 }
 
 // Status bar String       eg: { "bateria" : "58" , "almacenamiento" : "true" }
-String statusBar() {
+String statusBarBattery() {
   char buffer[100];
   char nBuffer[10];
-  strcpy(buffer, "{ \"bateria\" : \"");
-  sprintf(nBuffer, "%02d", measureBattery);
+  Serial.println("Measuring Battery...");
+  strcpy(buffer, "{ \"tipo\" : \"bateria\" , \"data\" : \"");
+  sprintf(nBuffer, "%02d", measureBattery());
   strcat(buffer, nBuffer);
-  strcat(buffer, "\" , \"almacenamiento\" : \"");
+  strcat(buffer, "\"}");
+  Serial.print("Status bar message: ");
+  Serial.println(buffer);
+  return buffer;
+}
+
+String statusBarStorage() {
+  char buffer[100];
+
+  strcpy(buffer, "{\"tipo\" : \"almacenamiento\" , \"data\" : ");
   // checks if SD path still exists, if not, SD is disconnected
   if (SD.exists("/config")) {
-    strcat(buffer, "true\" }");
+    strcat(buffer, "true }");
     isInitSD = true;
   } else {
-    strcat(buffer, "false\" }");
+    strcat(buffer, "false }");
     isInitSD = false;
   }
 
   Serial.print("Status bar message: ");
   Serial.println(buffer);
   return buffer;
+}
+
+void checkPower() {
+  int v = 0;
+  for (int i = 0; i < 5; i++) {
+    v = v + analogReadMilliVolts(ADCPIN);
+    delay(10);
+  }
+  v = v / 5;
+
+  // Serial.print("power v: ");
+  // Serial.println(v);
+
+  if (v < (900 * powerRatio) && !isPanelDisconnected) {
+    digitalWrite(panelControlPin, LOW);
+    isPanelDisconnected = true;
+    powerC = 0;
+    // Serial.println("Panel disconnected");
+  } else if (v > (1100 * powerRatio) && isPanelDisconnected) {
+    powerC++;
+    if (powerC > 5) {
+      digitalWrite(panelControlPin, HIGH);
+      isPanelDisconnected = false;
+      // Serial.println("Panel connected");
+      powerC = 0;
+    }
+  }
+
 }
 
 //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -2277,8 +2271,8 @@ void setup() {
   SPI.begin(18, 19, 23, 5); // CLK = PIN 18, MISO = PIN 19, MOSI = PIN 23, CS = PIN 5
   delay(200);
   // Set pins
-  pinMode(ledPin, OUTPUT);
-  digitalWrite(ledPin, LOW);
+  pinMode(panelControlPin, OUTPUT);
+  digitalWrite(panelControlPin, LOW);
   // Inits
   delay(500);
   initSD(&isInitSD);
@@ -2293,7 +2287,6 @@ void setup() {
   initLittleFS();
   rtcInit(&isRTC);
   tempDSB.begin();
-  
 
   // RTC Config
   rtc.disable32K();
@@ -2307,39 +2300,28 @@ void setup() {
   Serial.println(isInitSD);
 
   // Setting interrupts
-  pinMode(AIRFLOWPIN, INPUT);
-  pinMode(PRECIPPIN, INPUT);
+  pinMode(AIRFLOWPIN, INPUT_PULLDOWN);
+  pinMode(PRECIPPIN, INPUT_PULLDOWN);
   pinMode(RTCINTERRUPTPIN, INPUT_PULLUP);
-  attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
+  attachInterrupt(AIRFLOWPIN, airflowISR, RISING);
   attachInterrupt(PRECIPPIN, precipISR, FALLING);
   attachInterrupt(RTCINTERRUPTPIN, rtcISR, FALLING);
   computeTime = millis();
 
   // Input pins
   pinMode(WINDNPIN, INPUT);
-  pinMode(WINDSPIN, INPUT);
-  pinMode(WINDEPIN, INPUT);
-  pinMode(WINDWPIN, INPUT);
-  pinMode(WINDNEPIN, INPUT);
-  pinMode(WINDNWPIN, INPUT);
-  pinMode(WINDSEPIN, INPUT);
-  pinMode(WINDSWPIN, INPUT);
+  pinMode(WINDSPIN, INPUT_PULLDOWN);
+  pinMode(WINDEPIN, INPUT_PULLDOWN);
+  pinMode(WINDWPIN, INPUT_PULLDOWN);
+  pinMode(WINDNEPIN, INPUT_PULLDOWN);
+  pinMode(WINDNWPIN, INPUT_PULLDOWN);
+  pinMode(WINDSEPIN, INPUT_PULLDOWN);
+  pinMode(WINDSWPIN, INPUT_PULLDOWN);
 
   pinMode(ADCPIN, INPUT);
   pinMode(BATTERYPIN, INPUT);
 
   batteryLevel = measureBattery();
-
-  // SD Working indicator
-  if (isInitSD) {
-    int blinkC = 0;    
-    if (!SD.exists("/config")) createDirSD(SD, "/config");
-    if (!SD.exists("/misc")) createDirSD(SD, "/misc");
-    while (blinkC<2) {
-      blink();
-      blinkC++;
-    }
-  }
 
   // Config reading
   if (isInitSD) {
@@ -2360,7 +2342,9 @@ void setup() {
     rawTextLine = readMultipleLinesSD(SD, ivPathAuth);
     if (rawTextLine != "") strcpy(eIvAuth, rawTextLine.c_str());
     rawTextLine = readFileSD(SD, lastInsertPath);
-    if (rawTextLine != "") lastInsertTimestamp =strtoul(rawTextLine.c_str(), NULL, 0);
+    if (rawTextLine != "") lastInsertTimestamp = strtoul(rawTextLine.c_str(), NULL, 0);
+    rawTextLine = readFileSD(SD, solarControlPath);
+    if (rawTextLine != "") powerRatio = atof(rawTextLine.c_str());
   } else {
     rawTextLine = readFileFS(LittleFS, networkConfigPath);
     if (rawTextLine != "") parse_csv(csvNetworkConfig, &rawTextLine, ",", 5);
@@ -2379,7 +2363,7 @@ void setup() {
     rawTextLine = readMultipleLinesFS(LittleFS, ivPathAuth);
     if (rawTextLine != "") strcpy(eIvAuth, rawTextLine.c_str());
     rawTextLine = readFileFS(LittleFS, lastInsertPath);
-    if (rawTextLine != "") lastInsertTimestamp =strtoul(rawTextLine.c_str(), NULL, 0);
+    if (rawTextLine != "") lastInsertTimestamp = strtoul(rawTextLine.c_str(), NULL, 0);
   }
 
   // String to int
@@ -2429,10 +2413,10 @@ void setup() {
   //  Serial.println(ip);
   Serial.println(gateway);
 
-  // HTTP Methods
+  // HTTP Methods    
+
   if(mode == "1" || mode == "2") {
-    //WebSocket
-    initWS();
+
     // Route for root / web page
     server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
       request->send(LittleFS, "/mainUI/index.html", "text/html"); // main UI loading
@@ -2482,10 +2466,10 @@ void setup() {
       //esp_task_wdt_reset();
     });
 
-    server.on("/datos/descargar", HTTP_GET, [](AsyncWebServerRequest* request) {
+    server.on("/descargar", HTTP_GET, [](AsyncWebServerRequest* request) {
       int params = request->params();
       String downloadPath = "";
-
+      char buffer[5];
       for (int i = 0; i < params; i++) {
         const AsyncWebParameter* p = request->getParam(i);
         if (p->name() == PARAM_DL_0) {
@@ -2498,6 +2482,8 @@ void setup() {
         if (p->name() == PARAM_DL_1) {
           monthDL = p->value().c_str();
           monthIntDL = atoi(monthDL.c_str());
+          sprintf(buffer, "%02d", monthIntDL);
+          monthDL = buffer;
           Serial.print("Month: ");
           Serial.println(monthDL);
           isParamDL[1] = true;
@@ -2506,6 +2492,8 @@ void setup() {
         if (p->name() == PARAM_DL_2) {
           dayDL = p->value().c_str();
           dayIntDL = atoi(dayDL.c_str());
+          sprintf(buffer, "%02d", dayIntDL);
+          dayDL = buffer;
           Serial.print("Day: ");
           Serial.println(dayDL);
           isParamDL[2] = true;
@@ -2522,6 +2510,7 @@ void setup() {
       // Day
       if(isParamDL[2]) {
         downloadPath = "/" + yearDL + "/" + monthIntDL + "/" + yearDL + "-" + monthDL + "-" + dayDL + "_" + varDL + ".JSONL";
+       
       }
       // Month
       if(isParamDL[1] && !isParamDL[2]) {
@@ -2533,10 +2522,12 @@ void setup() {
         downloadPath = "";
       }
 
-      if(downloadPath = "") {
-        request->send(401, "plain/text", "File not found");
+      Serial.println(downloadPath);
+      if(downloadPath == "") {
+        request->send(405, "plain/text", "File not found");
       } else {
-        request->send(SD, downloadPath, "text/text", true);
+        Serial.println("Trying to send data...");
+        request->send(SD, downloadPath, String(), true);
       }
     });
 
@@ -2569,11 +2560,10 @@ void setup() {
           token = tempBuff.c_str();
           Serial.println(token);
         }
-        //}
       }
       if(isTokenValid(token)) {        
         if (pVal == PARAM_CONFIG_0) { // network
-          request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));/////////////////////////////////////////////////////////////////////
+          request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));
         }
         if (pVal == PARAM_CONFIG_1) { // calibration
           request->send(200, "application/json", arrayToJsonString(csvCalibrationConfigName, csvCalibrationConfig, 3));
@@ -2649,7 +2639,7 @@ void setup() {
           }
         }
       }
-      if (adminPasswordOK(tryPass)) { ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+      if (adminPasswordOK(tryPass)) { 
         tokenIndex = activateToken();
         if(tokenIndex > -1) {
           Serial.println("Token activated: ");
@@ -2689,10 +2679,10 @@ void setup() {
     
     printLocalTime();
     getLocalTime(&tmstruct);
-    if (isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
-    
+    if (isRTC && tmstruct.tm_year+1900 >= rtc.now().year()) {
+      rtcAdjust(DateTime(tmstruct.tm_year + 1900, tmstruct.tm_mon + 1, tmstruct.tm_mday, tmstruct.tm_hour, tmstruct.tm_min, tmstruct.tm_sec)); 
+    }
     server.begin();
-
 
   } else if (mode == "2" || !initWiFi()) {
     /*
@@ -2785,7 +2775,6 @@ void setup() {
             Serial.print("Gateway set to: ");
             Serial.println(gateway);
           }
-
           if (p->name() == PARAM_INPUT_5) {
             admin_pass = p->value().c_str();
             Serial.print("Admin pass set to: ");
@@ -2824,6 +2813,9 @@ void setup() {
     server.begin();
   }
 
+  //WebSocket
+  initWS();
+
   // Creating paths
   updateTime();
   changeDatePath();
@@ -2859,11 +2851,11 @@ void setup() {
     strcat(b, ".JSONL");
     dailyAverage(b);
   }
-  if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);                 // File was used to compute this month's values'
+  if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);                 // File was used to compute this month's values
   writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), date.day()));
 
   monthlyAverage(date.year(), date.month());
-  if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+  if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values
   writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
   
   // Dumping to database on startup
@@ -2871,6 +2863,12 @@ void setup() {
   if(isInitSD) sendPostToDatabase(lastInsertTimestamp, variableName);
 
   Serial.println("Server ready!");
+
+  char tempBuffer[200];
+  sprintf(tempBuffer, "%lu", getEpochRTC(gmtOffset));
+  appendFileSD(SD, "/debug.txt", "server started...");
+  appendFileSD(SD, "/debug.txt", tempBuffer);
+  appendFileSD(SD, "/debug.txt", "\n");
 }
 
 void loop() {
@@ -2879,7 +2877,7 @@ void loop() {
   if(WiFi.status() != WL_CONNECTED && mode == "1") {    // is on STA mode
     Serial.println("Connection lost, trying to reconnect...");
     currentMillisDC = millis();
-    
+
     // Tries to reconnect after 2 min interval, up to 10 times
     if(reconnectCounter < 10 && (currentMillisDC - prevMillisDC >= reconnectInt)) {
       WiFi.disconnect();
@@ -2898,7 +2896,6 @@ void loop() {
       }
       server.end();
       WiFi.disconnect();
-      
       // Try to init wifi and connect
       if(!initWiFi()) {
         // AP Mode
@@ -2982,6 +2979,7 @@ void loop() {
   }
 
   while ((isRTC && alarmRTC) || !isRTC) {
+
     if (!isRTC) delay(baseTime);   // Backup timer
     // Detach interrupts for comms use
     detachInterrupt(AIRFLOWPIN);
@@ -2997,7 +2995,8 @@ void loop() {
     // Status bar, battery + sd connected
     statusC ++;
     if(statusC >= 30) {
-      sendMessageWS(statusBar());
+      sendMessageWS(statusBarBattery());
+      sendMessageWS(statusBarStorage());
       statusC = 0;
     } 
 
@@ -3005,10 +3004,15 @@ void loop() {
     humid = readHumidDHT(dht);
     temp = readDSBTemp(tempDSB);
     solar = readPower(ADCPIN, solarRatio);
-    airflow = readAirflow(ptrTimesAirflowSwitch, computeTime, airflowRatio);
+    airflow = readAirflow((float)timesAirflowSwitch, computeTime, airflowRatio);
+    *ptrTimesAirflowSwitch = 0;
     windDir = readWindDir(WINDNPIN, WINDSPIN, WINDEPIN, WINDWPIN, WINDNEPIN, WINDNWPIN, WINDSEPIN, WINDSWPIN);
-    precip = readPrecip(ptrTimesPrecipSwitch, computeTime, precipRatio);
+    precip = readPrecip((float)timesPrecipSwitch, computeTime, precipRatio);
+    *ptrTimesPrecipSwitch = 0;
     if (isBMP) pressure = readPressure(&bmp);
+
+    //Checking if solar power is sufficient
+    checkPower();
 
     // WebSocket sending readings
     sendMessageWS(currentReadingsString(readings, variableName, 7, epochTime_1));
@@ -3095,11 +3099,11 @@ void loop() {
         strcat(b, ".JSONL");
         dailyAverage(b);
       }
-      if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);                 // File was used to compute this month's values'
+      if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);                 // File was used to compute this month's values
       writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), date.day()));
 
       monthlyAverage(date.year(), date.month());
-      if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+      if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values
       writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(date.year(), date.month(), 1));
 
     } else if (realTimeC >= sampleTime) {   // No SD found, update backup arrays
@@ -3125,8 +3129,7 @@ void loop() {
         for (int i = 0 ; i < 7; i++) {
           backupValues[i][19] = *readings[i];
         }
-      }
-      
+      } 
     }
     
     // Sending data to server
@@ -3152,10 +3155,10 @@ void loop() {
         dailyAverage(b);
       }
 
-      if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);       // File was used to compute this month's values'
+      if (SD.exists(avgPath)) deleteFileSD(SD, avgPath);       // File was used to compute this month's values
       writeJsonlSD(SD, avgPath, avgReadings, variableName, 6, getTimeEpoch(pastYear, pastMonth, pastDay));
       monthlyAverage(pastYear, pastMonth);
-      if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values'
+      if (SD.exists(monthAvgPath)) deleteFileSD(SD, monthAvgPath);       // File was used to compute this year's values
       writeJsonlSD(SD, monthAvgPath, avgReadings, variableName, 6, getTimeEpoch(pastYear, pastMonth, 1));
 
       // Save daily max-min
@@ -3187,7 +3190,7 @@ void loop() {
     }
 
     // Reattaching interrupts
-    attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         // Might change later falling -> rising
+    attachInterrupt(AIRFLOWPIN, airflowISR, FALLING);         
     attachInterrupt(PRECIPPIN, precipISR, FALLING);
     // New start time for measurements
     computeTime = millis();

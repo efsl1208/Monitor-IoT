@@ -4,7 +4,7 @@ float readWindDir(int N, int S, int E, int W, int NE, int NW, int SE, int SW){
   bool dir_cross[4] = {digitalRead(NE),digitalRead(SE),digitalRead(SW),digitalRead(NW)};
   int c_nesw = -1;
   int c_cross = -1;
-  float dir = -1;
+  float dir = 225;
 
   for(int i = 0; i < 4; i++) {
     if(dir_nesw[i]) {

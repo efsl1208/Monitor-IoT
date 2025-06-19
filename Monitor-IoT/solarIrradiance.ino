@@ -4,8 +4,13 @@ float readSolarIrr(int adcPin, float solarIrrRatio){
 }
 
 float readPower(int adcPin, float ratio) {
-  int v = analogReadMilliVolts(adcPin);
-  return ( (v - 142) * (v - 142) / (1.5 * 1000) ) * ratio ;
+  int v = 0;
+  for (int i = 0; i < 5; i++) {
+    v = v + analogReadMilliVolts(adcPin);
+    delay(10);
+  }
+  v = v / 5;
+  return ( (v - 142) * (v - 142) * 9 / (130) ) * ratio ;
 }
 
 void saveSolarIrr(fs::FS& fs, const char* path, unsigned long epochTime, int adcPin, float solarIrrRatio){
