@@ -36,8 +36,8 @@
 /     22: I2C/SCL
 /     23: MOSI
 /     25: Wind direction West
-/     26: Wind direction Nort East
-/     27: Wind direction Nort West
+/     26: Wind direction North East
+/     27: Wind direction North West
 /     34: ADC (Solar Irr)
 /     32: Wind direction South
 /     33: Wind direction East
