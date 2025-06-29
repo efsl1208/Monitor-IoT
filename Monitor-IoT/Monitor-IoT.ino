@@ -21,7 +21,6 @@
 #include <HTTPClient.h>
 
 /*    Pins usage
-/     0: RTC Interrupts
 /     2: Panel control
 /     4: DHT
 /     5: CS
@@ -43,6 +42,7 @@
 /     32: Wind direction South
 /     33: Wind direction East
 /     35: Wind direction North
+/     VN(39): ADC (Battery level)
 */
 
 // PIN definitions, etc
