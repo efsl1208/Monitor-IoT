@@ -36,8 +36,8 @@
 /     22: I2C/SCL
 /     23: MOSI
 /     25: Wind direction West
-/     26: Wind direction North East
-/     27: Wind direction North West
+/     26: Wind direction Nort East
+/     27: Wind direction Nort West
 /     34: ADC (Solar Irr)
 /     32: Wind direction South
 /     33: Wind direction East
@@ -592,7 +592,9 @@ bool initWiFi() {
   }
 
   WiFi.mode(WIFI_STA);
+  if(ip == "") ip = "192.168.0.2"; 
   localIP.fromString(ip.c_str());
+  if(gateway == "") gateway = "192.168.0.1";
   localGateway.fromString(gateway.c_str());
 
   Serial.println(ip.c_str());
@@ -2053,7 +2055,11 @@ void encryptAES(const unsigned char* key, const char* message, char* output) {
     tempMessage[i] = message[i];
   }
   char iv[16];
-  esp_fill_random(&iv, 16);
+  //esp_fill_random(&iv, 16);
+  const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (int i = 0; i < 16; i++) {
+    iv[i] = charset[esp_random() % (sizeof(charset) - 1)];
+  }
 
   Serial.print("Random iv generated: ");
   Serial.println(iv);
@@ -2106,8 +2112,13 @@ String encryptAES(const unsigned char* key, const char* message) {
   }
   char iv[16];
   char output[64] = "";
-  esp_fill_random(&iv, 16);
 
+  //esp_fill_random(&iv, 16);
+  const char charset[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (int i = 0; i < 16; i++) {
+    iv[i] = charset[esp_random() % (sizeof(charset) - 1)];
+  }
+  
   Serial.print("Random iv generated: ");
   Serial.println(iv);
   // Saving generated iv in memory
@@ -2559,6 +2570,7 @@ void setup() {
       }
       if(isTokenValid(token)) {        
         if (pVal == PARAM_CONFIG_0) { // network
+          pass = "";
           request->send(200, "application/json", arrayToJsonString(csvNetworkConfigName, csvNetworkConfig, 5));
         }
         if (pVal == PARAM_CONFIG_1) { // calibration
@@ -2680,7 +2692,7 @@ void setup() {
     }
     server.begin();
 
-  } else if (mode == "2" || !initWiFi()) {
+  } else if (mode == "2" || (!initWiFi() && mode == "1")) {
     /*
     /
     /
@@ -2688,7 +2700,9 @@ void setup() {
     // AP Mode
     Serial.println("Setting AP (Access Point)");
     // NULL sets an open Access Point
+    if (ip == "") ip = "192.168.0.2";
     localIP.fromString(ip.c_str());
+    if (gateway == "") gateway = "192.168.0.1";
     localGateway.fromString(gateway.c_str());
     WiFi.softAPConfig(localIP, localGateway, subnet);
     Serial.print("AP password: ");
@@ -2756,18 +2770,21 @@ void setup() {
           // HTTP POST pass value
           if (p->name() == PARAM_INPUT_2) {
             pass = p->value().c_str();
+            if(pass == "") pass = "\"NULL\"";
             Serial.print("Password set to: ");
             Serial.println(pass);
           }
           // HTTP POST ip value
           if (p->name() == PARAM_INPUT_3) {
             ip = p->value().c_str();
+            if (ip == "") ip = "192.168.0.2";
             Serial.print("IP Address set to: ");
             Serial.println(ip);
           }
           // HTTP POST gateway value
           if (p->name() == PARAM_INPUT_4) {
             gateway = p->value().c_str();
+            if (gateway == "") gateway = "192.168.0.1";
             Serial.print("Gateway set to: ");
             Serial.println(gateway);
           }
@@ -2876,11 +2893,12 @@ void loop() {
 
   // Wireless checks
   if(WiFi.status() != WL_CONNECTED && mode == "1") {    // is on STA mode
-    Serial.println("Connection lost, trying to reconnect...");
+    
     currentMillisDC = millis();
 
     // Tries to reconnect after 2 min interval, up to 10 times
     if(reconnectCounter < 10 && (currentMillisDC - prevMillisDC >= reconnectInt)) {
+      Serial.println("Connection lost, trying to reconnect...");
       WiFi.disconnect();
       WiFi.reconnect();
       prevMillisDC = currentMillisDC;
@@ -2924,9 +2942,11 @@ void loop() {
       should_restart = true;
     }
 
-  } else {
+  } else if (reconnectCounter > 0) {
     // Connection OK
     reconnectCounter = 0;
+    reconnectInt = 120000;
+    Serial.println("Connection OK");
   }
 
   if (should_restart) {
